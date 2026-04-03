@@ -96,7 +96,12 @@
         }
 
         async function fetchTrees() {
-            const { data, error } = await _supabase.from('trees').select('*').order('tree_id', { ascending: true });
+            // UPDATED: Now selects from 'trees' and joins with your new 'tree_yield_stats' view
+            const { data, error } = await _supabase
+                .from('trees')
+                .select('*, tree_yield_stats(avg_yearly_yield_kg)')
+                .order('tree_id', { ascending: true });
+
             if (error) {
                 document.getElementById('treeGrid').innerHTML = `<p class="text-red-500 p-4 bg-red-50 rounded-lg">Error: ${error.message}</p>`;
             } else {
@@ -111,7 +116,11 @@
                 grid.innerHTML = '<p class="text-gray-500 p-4">No trees found.</p>';
                 return;
             }
-            grid.innerHTML = trees.map(tree => `
+            grid.innerHTML = trees.map(tree => {
+                // Pull the average yield from the joined view data
+                const avgYield = tree.tree_yield_stats?.[0]?.avg_yearly_yield_kg || '0.00';
+
+                return `
                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition">
                     <div class="flex justify-between items-start mb-4">
                         <div>
@@ -119,12 +128,17 @@
                             <p class="text-sm text-emerald-600 font-medium">${tree.variety || 'Unknown'}</p>
                         </div>
                     </div>
+                    
+                    <div class="text-xs text-gray-500 mb-4 bg-gray-50 p-2 rounded-lg">
+                        Avg Yearly Yield: <span class="font-bold text-gray-800">${avgYield} kg</span>
+                    </div>
+
                     <div class="grid grid-cols-2 gap-2 mt-4">
                         <button onclick="openHarvest('${tree.tree_id}')" class="bg-emerald-50 text-emerald-700 py-2 rounded-lg text-sm font-bold">Log Harvest</button>
                         <button onclick="openWorkOrder('${tree.tree_id}')" class="bg-orange-50 text-orange-700 py-2 rounded-lg text-sm font-bold">Work Order</button>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         function filterTrees() {
@@ -148,7 +162,6 @@
             showPage('work-order');
         }
 
-        // SUBMISSION LOGIC
         document.getElementById('harvestForm').onsubmit = async (e) => {
             e.preventDefault();
             const treeId = document.getElementById('harvest-id-internal').value;
@@ -162,13 +175,14 @@
                     gross_weight_kg: parseFloat(weight), 
                     leaf_to_nut_ratio: parseFloat(ratio) || 0,
                     notes: notes, 
-                    harvest_date: new Date().toISOString() // Sets to current day
+                    harvest_date: new Date().toISOString().split('T')[0] 
                 }
             ]);
 
             if (error) alert("Error saving harvest: " + error.message);
             else {
                 alert("Harvest logged successfully!");
+                fetchTrees(); // Refresh the list to update the average yield display
                 showPage('tree-list');
                 e.target.reset();
             }
