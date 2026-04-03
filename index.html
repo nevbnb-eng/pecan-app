@@ -6,9 +6,12 @@
     <title>Pecan Manager Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         .page { display: none; }
         .page.active { display: block; }
+        #map { height: 70vh; width: 100%; border-radius: 1rem; border: 2px solid #e5e7eb; }
     </style>
 </head>
 <body class="bg-gray-50 font-sans text-gray-900">
@@ -17,7 +20,8 @@
         <div class="container mx-auto flex justify-between items-center">
             <h1 class="text-2xl font-bold tracking-tight cursor-pointer" onclick="showPage('tree-list')">Orchard Database</h1>
             <nav class="space-x-4">
-                <button onclick="showPage('tree-list')" class="hover:underline">Trees</button>
+                <button onclick="toggleMapView()" id="viewToggle" class="bg-emerald-700 px-4 py-2 rounded-lg text-sm font-bold shadow-inner">Switch to Map</button>
+                <button onclick="showPage('tree-list')" class="hover:underline">Trees List</button>
             </nav>
         </div>
     </header>
@@ -31,6 +35,11 @@
             <div id="treeGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <p class="text-gray-500">Loading orchard data...</p>
             </div>
+        </section>
+
+        <section id="map-view" class="page">
+            <div id="map" class="shadow-lg"></div>
+            <p class="text-xs text-gray-500 mt-2 italic text-center">Tap a tree marker to log harvest or create work orders.</p>
         </section>
 
         <section id="log-harvest" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
@@ -84,11 +93,30 @@
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         let orchardData = [];
+        let map;
+        let markers = [];
 
         function showPage(pageId) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.getElementById(pageId).classList.add('active');
+            
+            // Re-render map if switching to it
+            if (pageId === 'map-view') {
+                setTimeout(() => { map.invalidateSize(); }, 100);
+            }
             window.scrollTo(0,0);
+        }
+
+        function toggleMapView() {
+            const btn = document.getElementById('viewToggle');
+            if (document.getElementById('map-view').classList.contains('active')) {
+                showPage('tree-list');
+                btn.innerText = "Switch to Map";
+            } else {
+                showPage('map-view');
+                btn.innerText = "Switch to Grid";
+                initMap();
+            }
         }
 
         async function fetchTrees() {
@@ -98,38 +126,73 @@
                 .order('tree_id', { ascending: true });
 
             if (error) {
-                document.getElementById('treeGrid').innerHTML = `<p class="text-red-500 p-4 bg-red-50 rounded-lg">Error: ${error.message}</p>`;
+                document.getElementById('treeGrid').innerHTML = `<p class="text-red-500">Error: ${error.message}</p>`;
             } else {
                 orchardData = data;
                 renderTrees(data);
+                if (map) updateMapMarkers();
             }
         }
 
-        // NEW: Function to capture GPS and update Supabase
+        function initMap() {
+            if (map) return;
+            // Initialize map (centering roughly on common user location or first tree)
+            map = L.map('map').setView([-27.65, 152.2], 16); 
+
+            // Satellite Layer
+            L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+                maxZoom: 20,
+                subdomains:['mt0','mt1','mt2','mt3']
+            }).addTo(map);
+
+            updateMapMarkers();
+        }
+
+        function updateMapMarkers() {
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+
+            orchardData.forEach(tree => {
+                if (tree.latitude && tree.longitude) {
+                    const marker = L.marker([tree.latitude, tree.longitude]).addTo(map);
+                    marker.bindPopup(`
+                        <div class="p-2">
+                            <h3 class="font-bold text-lg text-emerald-800">${tree.tree_id}</h3>
+                            <p class="text-sm mb-3">${tree.variety || 'Unknown Variety'}</p>
+                            <div class="flex flex-col gap-2">
+                                <button onclick="openHarvest('${tree.tree_id}')" class="bg-emerald-600 text-white px-3 py-2 rounded text-xs font-bold">Log Harvest</button>
+                                <button onclick="openWorkOrder('${tree.tree_id}')" class="bg-orange-600 text-white px-3 py-2 rounded text-xs font-bold">Work Order</button>
+                            </div>
+                        </div>
+                    `);
+                    markers.push(marker);
+                }
+            });
+            
+            // Auto-center map on trees if they exist
+            if (markers.length > 0) {
+                const group = new L.featureGroup(markers);
+                map.fitBounds(group.getBounds().pad(0.1));
+            }
+        }
+
         async function updateTreeLocation(treeId) {
             if (!navigator.geolocation) {
                 alert("Geolocation is not supported by your browser");
                 return;
             }
-
             navigator.geolocation.getCurrentPosition(async (position) => {
                 const lat = position.coords.latitude;
                 const lng = position.coords.longitude;
 
-                const { error } = await _supabase
-                    .from('trees')
-                    .update({ latitude: lat, longitude: lng })
-                    .eq('tree_id', treeId);
+                const { error } = await _supabase.from('trees').update({ latitude: lat, longitude: lng }).eq('tree_id', treeId);
 
-                if (error) {
-                    alert("Error updating location: " + error.message);
-                } else {
+                if (error) alert("Error: " + error.message);
+                else {
                     alert(`Location saved for ${treeId}!`);
-                    fetchTrees(); // Refresh to show map link
+                    fetchTrees();
                 }
-            }, (err) => {
-                alert("GPS Error: " + err.message + ". Make sure location is enabled.");
-            }, { enableHighAccuracy: true });
+            }, (err) => { alert("GPS Error: " + err.message); }, { enableHighAccuracy: true });
         }
 
         function renderTrees(trees) {
@@ -140,12 +203,6 @@
             }
             grid.innerHTML = trees.map(tree => {
                 const avgYield = tree.tree_yield_stats?.[0]?.avg_yearly_yield_kg || '0.00';
-                
-                // Show a Google Maps link if coordinates exist
-                const mapLink = (tree.latitude && tree.longitude) 
-                    ? `<a href="https://www.google.com/maps?q=${tree.latitude},${tree.longitude}" target="_blank" class="text-blue-600 underline text-xs">View on Map</a>`
-                    : `<span class="text-gray-400 text-xs italic">No GPS data</span>`;
-
                 return `
                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition">
                     <div class="flex justify-between items-start mb-4">
@@ -153,13 +210,10 @@
                             <h3 class="text-lg font-bold text-gray-900">${tree.tree_id}</h3>
                             <p class="text-sm text-emerald-600 font-medium">${tree.variety || 'Unknown'}</p>
                         </div>
-                        ${mapLink}
                     </div>
-                    
                     <div class="text-xs text-gray-500 mb-4 bg-gray-50 p-2 rounded-lg">
                         Avg Yearly Yield: <span class="font-bold text-gray-800">${avgYield} kg</span>
                     </div>
-
                     <div class="grid grid-cols-2 gap-2 mt-4">
                         <button onclick="openHarvest('${tree.tree_id}')" class="bg-emerald-50 text-emerald-700 py-2 rounded-lg text-sm font-bold">Log Harvest</button>
                         <button onclick="openWorkOrder('${tree.tree_id}')" class="bg-orange-50 text-orange-700 py-2 rounded-lg text-sm font-bold">Work Order</button>
@@ -174,8 +228,7 @@
         function filterTrees() {
             const term = document.getElementById('treeSearch').value.toLowerCase();
             const filtered = orchardData.filter(t => 
-                t.tree_id.toLowerCase().includes(term) || 
-                (t.variety && t.variety.toLowerCase().includes(term))
+                t.tree_id.toLowerCase().includes(term) || (t.variety && t.variety.toLowerCase().includes(term))
             );
             renderTrees(filtered);
         }
@@ -194,46 +247,27 @@
 
         document.getElementById('harvestForm').onsubmit = async (e) => {
             e.preventDefault();
-            const treeId = document.getElementById('harvest-id-internal').value;
-            const weight = document.getElementById('weight_kg').value;
-            const ratio = document.getElementById('ratio').value;
-            const notes = document.getElementById('harvest-notes').value;
-            
-            const { error } = await _supabase.from('harvest_logs').insert([
-                { 
-                    tree_id: treeId, 
-                    gross_weight_kg: parseFloat(weight), 
-                    leaf_to_nut_ratio: parseFloat(ratio) || 0,
-                    notes: notes, 
-                    harvest_date: new Date().toISOString().split('T')[0] 
-                }
-            ]);
-
-            if (error) alert("Error saving harvest: " + error.message);
-            else {
-                alert("Harvest logged successfully!");
-                fetchTrees();
-                showPage('tree-list');
-                e.target.reset();
-            }
+            const { error } = await _supabase.from('harvest_logs').insert([{ 
+                tree_id: document.getElementById('harvest-id-internal').value, 
+                gross_weight_kg: parseFloat(document.getElementById('weight_kg').value), 
+                leaf_to_nut_ratio: parseFloat(document.getElementById('ratio').value) || 0,
+                notes: document.getElementById('harvest-notes').value, 
+                harvest_date: new Date().toISOString().split('T')[0] 
+            }]);
+            if (error) alert("Error: " + error.message);
+            else { alert("Harvest logged!"); fetchTrees(); showPage('tree-list'); e.target.reset(); }
         };
 
         document.getElementById('workForm').onsubmit = async (e) => {
             e.preventDefault();
-            const treeId = document.getElementById('work-id-internal').value;
-            const task = document.getElementById('task-type').value;
-            const notes = document.getElementById('work-notes').value;
-
-            const { error } = await _supabase.from('work_orders').insert([
-                { tree_id: treeId, task_type: task, notes: notes, status: 'Pending' }
-            ]);
-
-            if (error) alert("Error saving work order: " + error.message);
-            else {
-                alert("Work order created!");
-                showPage('tree-list');
-                e.target.reset();
-            }
+            const { error } = await _supabase.from('work_orders').insert([{ 
+                tree_id: document.getElementById('work-id-internal').value, 
+                task_type: document.getElementById('task-type').value, 
+                notes: document.getElementById('work-notes').value, 
+                status: 'Pending' 
+            }]);
+            if (error) alert("Error: " + error.message);
+            else { alert("Work order created!"); showPage('tree-list'); e.target.reset(); }
         };
 
         fetchTrees();
