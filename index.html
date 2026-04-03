@@ -1,185 +1,116 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pecan Manager Pro</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <style>
-        .page { display: none; }
-        .page.active { display: block; }
-    </script>
-</head>
-<body class="bg-gray-50 font-sans text-gray-900">
+// --- CONFIGURATION ---
+const SUPABASE_URL = 'https://etqenbfxzyhpcpudmlqo.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'; // Your key here
 
-    <header class="bg-emerald-800 text-white p-6 shadow-lg">
-        <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-2xl font-bold tracking-tight cursor-pointer" onclick="showPage('tree-list')">Orchard Database</h1>
-            <nav class="space-x-4">
-                <button onclick="showPage('tree-list')" class="hover:underline">Trees</button>
-            </nav>
+// FIX: Rename the constant to _supabase to avoid conflict with the library
+const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let orchardData = [];
+
+// --- NAVIGATION ---
+function showPage(pageId) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById(pageId).classList.add('active');
+    window.scrollTo(0,0);
+}
+
+// --- DATA FETCHING ---
+async function fetchTrees() {
+    console.log("Fetching trees...");
+    const { data, error } = await _supabase.from('trees').select('*').order('tree_id', { ascending: true });
+    
+    if (error) {
+        console.error("Supabase Error:", error.message);
+        document.getElementById('treeGrid').innerHTML = `<p class="text-red-500">Error: ${error.message}</p>`;
+    } else {
+        console.log("Data received:", data);
+        orchardData = data;
+        renderTrees(data);
+    }
+}
+
+function renderTrees(trees) {
+    const grid = document.getElementById('treeGrid');
+    if (trees.length === 0) {
+        grid.innerHTML = '<p class="text-gray-500">No trees found in database.</p>';
+        return;
+    }
+    grid.innerHTML = trees.map(tree => `
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h3 class="text-lg font-bold text-gray-900">${tree.tree_id}</h3>
+                    <p class="text-sm text-emerald-600 font-medium">${tree.variety || 'Unknown Variety'}</p>
+                </div>
+                <span class="text-xs bg-gray-100 px-2 py-1 rounded text-gray-500 italic">Planted: ${tree.planted_date || 'N/A'}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mt-4">
+                <button onclick="openHarvest('${tree.tree_id}')" class="bg-emerald-50 text-emerald-700 py-2 rounded-lg text-sm font-bold hover:bg-emerald-100">Log Harvest</button>
+                <button onclick="openWorkOrder('${tree.tree_id}')" class="bg-orange-50 text-orange-700 py-2 rounded-lg text-sm font-bold hover:bg-orange-100">Work Order</button>
+            </div>
         </div>
-    </header>
+    `).join('');
+}
 
-    <main class="container mx-auto p-4 md:p-8">
+// --- SEARCH ---
+function filterTrees() {
+    const term = document.getElementById('treeSearch').value.toLowerCase();
+    const filtered = orchardData.filter(t => 
+        t.tree_id.toLowerCase().includes(term) || 
+        (t.variety && t.variety.toLowerCase().includes(term))
+    );
+    renderTrees(filtered);
+}
 
-        <section id="tree-list" class="page active">
-            <div class="mb-6">
-                <input type="text" id="treeSearch" oninput="filterTrees()" placeholder="Search by Tree ID or Variety..." 
-                       class="w-full p-4 rounded-xl border border-gray-300 shadow-sm focus:ring-2 focus:ring-emerald-500 outline-none">
-            </div>
-            <div id="treeGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <p class="text-gray-500">Loading orchard data...</p>
-            </div>
-        </section>
+// --- FORMS ---
+function openHarvest(id) {
+    document.getElementById('harvest-tree-id').innerText = id;
+    document.getElementById('harvest-id-internal').value = id;
+    showPage('log-harvest');
+}
 
-        <section id="log-harvest" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
-            <h2 class="text-xl font-bold mb-4 text-emerald-800">Log Harvest: <span id="harvest-tree-id"></span></h2>
-            <form id="harvestForm" class="space-y-4">
-                <input type="hidden" id="harvest-id-internal">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Gross Weight (kg)</label>
-                    <input type="number" step="0.01" id="weight" required class="w-full p-3 border rounded-lg">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Quality Notes</label>
-                    <textarea id="harvest-notes" class="w-full p-3 border rounded-lg"></textarea>
-                </div>
-                <button type="submit" class="w-full bg-emerald-600 text-white p-4 rounded-xl font-bold hover:bg-emerald-700 transition">Save Harvest Log</button>
-                <button type="button" onclick="showPage('tree-list')" class="w-full text-gray-500 mt-2">Cancel</button>
-            </form>
-        </section>
+function openWorkOrder(id) {
+    document.getElementById('work-tree-id').innerText = id;
+    document.getElementById('work-id-internal').value = id;
+    showPage('work-order');
+}
 
-        <section id="work-order" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
-            <h2 class="text-xl font-bold mb-4 text-orange-800">New Work Order: <span id="work-tree-id"></span></h2>
-            <form id="workForm" class="space-y-4">
-                <input type="hidden" id="work-id-internal">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Task Type</label>
-                    <select id="task-type" class="w-full p-3 border rounded-lg">
-                        <option>Pruning</option>
-                        <option>Fertilizing</option>
-                        <option>Irrigation Repair</option>
-                        <option>Pest Control</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Instructions / Findings</label>
-                    <textarea id="work-notes" required class="w-full p-3 border rounded-lg" placeholder="e.g. Broken lateral line on North side"></textarea>
-                </div>
-                <button type="submit" class="w-full bg-orange-600 text-white p-4 rounded-xl font-bold hover:bg-orange-700 transition">Submit Work Order</button>
-                <button type="button" onclick="showPage('tree-list')" class="w-full text-gray-500 mt-2">Cancel</button>
-            </form>
-        </section>
+// --- SUBMISSIONS ---
+document.getElementById('harvestForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const treeId = document.getElementById('harvest-id-internal').value;
+    const weight = document.getElementById('weight').value;
+    const notes = document.getElementById('harvest-notes').value;
+    
+    const { error } = await _supabase.from('harvest_logs').insert([
+        { tree_id: treeId, gross_weight: parseFloat(weight), notes: notes, harvest_date: new Date() }
+    ]);
 
-    </main>
+    if (error) alert("Error saving harvest: " + error.message);
+    else {
+        alert("Harvest logged successfully!");
+        showPage('tree-list');
+        e.target.reset();
+    }
+};
 
-    <script>
-        // --- CONFIGURATION ---
-        const SUPABASE_URL = 'https://etqenbfxzyhpcpudmlqo.supabase.co';
-        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0cWVuYmZ4enlocGNwdWRtbHFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1ODI3MDAsImV4cCI6MjA4NzE1ODcwMH0.5MR78dPRGKbshbHmY1CuAFpS4FMtGtY44IROA-O609c';
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+document.getElementById('workForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const treeId = document.getElementById('work-id-internal').value;
+    const task = document.getElementById('task-type').value;
+    const notes = document.getElementById('work-notes').value;
 
-        let orchardData = [];
+    const { error } = await _supabase.from('work_orders').insert([
+        { tree_id: treeId, task_type: task, notes: notes, status: 'Pending' }
+    ]);
 
-        // --- NAVIGATION ---
-        function showPage(pageId) {
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById(pageId).classList.add('active');
-            window.scrollTo(0,0);
-        }
+    if (error) alert("Error saving work order: " + error.message);
+    else {
+        alert("Work order created!");
+        showPage('tree-list');
+        e.target.reset();
+    }
+};
 
-        // --- DATA FETCHING ---
-        async function fetchTrees() {
-            const { data, error } = await supabase.from('trees').select('*').order('tree_id', { ascending: true });
-            if (error) console.error(error);
-            else {
-                orchardData = data;
-                renderTrees(data);
-            }
-        }
-
-        function renderTrees(trees) {
-            const grid = document.getElementById('treeGrid');
-            grid.innerHTML = trees.map(tree => `
-                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition">
-                    <div class="flex justify-between items-start mb-4">
-                        <div>
-                            <h3 class="text-lg font-bold text-gray-900">${tree.tree_id}</h3>
-                            <p class="text-sm text-emerald-600 font-medium">${tree.variety}</p>
-                        </div>
-                        <span class="text-xs bg-gray-100 px-2 py-1 rounded text-gray-500 italic">Planted: ${tree.planted_date || 'N/A'}</span>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2 mt-4">
-                        <button onclick="openHarvest('${tree.tree_id}')" class="bg-emerald-50 text-emerald-700 py-2 rounded-lg text-sm font-bold hover:bg-emerald-100">Log Harvest</button>
-                        <button onclick="openWorkOrder('${tree.tree_id}')" class="bg-orange-50 text-orange-700 py-2 rounded-lg text-sm font-bold hover:bg-orange-100">Work Order</button>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // --- SEARCH ---
-        function filterTrees() {
-            const term = document.getElementById('treeSearch').value.toLowerCase();
-            const filtered = orchardData.filter(t => 
-                t.tree_id.toLowerCase().includes(term) || 
-                t.variety.toLowerCase().includes(term)
-            );
-            renderTrees(filtered);
-        }
-
-        // --- FORMS ---
-        function openHarvest(id) {
-            document.getElementById('harvest-tree-id').innerText = id;
-            document.getElementById('harvest-id-internal').value = id;
-            showPage('log-harvest');
-        }
-
-        function openWorkOrder(id) {
-            document.getElementById('work-tree-id').innerText = id;
-            document.getElementById('work-id-internal').value = id;
-            showPage('work-order');
-        }
-
-        // --- SUBMISSIONS ---
-        document.getElementById('harvestForm').onsubmit = async (e) => {
-            e.preventDefault();
-            const treeId = document.getElementById('harvest-id-internal').value;
-            const weight = document.getElementById('weight').value;
-            
-            const { error } = await supabase.from('harvest_logs').insert([
-                { tree_id: treeId, gross_weight: parseFloat(weight), harvest_date: new Date() }
-            ]);
-
-            if (error) alert("Error saving harvest");
-            else {
-                alert("Harvest logged successfully!");
-                showPage('tree-list');
-                e.target.reset();
-            }
-        };
-
-        document.getElementById('workForm').onsubmit = async (e) => {
-            e.preventDefault();
-            const treeId = document.getElementById('work-id-internal').value;
-            const task = document.getElementById('task-type').value;
-            const notes = document.getElementById('work-notes').value;
-
-            const { error } = await supabase.from('work_orders').insert([
-                { tree_id: treeId, task_type: task, notes: notes, status: 'Pending', created_at: new Date() }
-            ]);
-
-            if (error) alert("Error saving work order");
-            else {
-                alert("Work order created!");
-                showPage('tree-list');
-                e.target.reset();
-            }
-        };
-
-        // Initial Load
-        fetchTrees();
-    </script>
-</body>
-</html>
+// Initial Load
+fetchTrees();
