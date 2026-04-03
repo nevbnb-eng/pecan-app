@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pecan Harvest Logger</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-gray-100 p-4">
+    <div class="max-w-md mx-auto bg-white rounded-xl shadow-md overflow-hidden p-6">
+        <h1 class="text-2xl font-bold text-gray-800 mb-4">Log Harvest</h1>
+        
+        <form id="harvestForm" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Tree ID</label>
+                <input type="number" id="tree_id" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Gross Weight (kg)</label>
+                <input type="number" step="0.1" id="gross_weight" required class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Leaf to Nut Ratio</label>
+                <input type="number" step="0.01" id="ratio" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Notes</label>
+                <textarea id="notes" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"></textarea>
+            </div>
+
+            <button type="submit" id="submitBtn" class="w-full bg-green-600 text-white font-bold py-2 px-4 rounded-md hover:bg-green-700">
+                Submit Log
+            </button>
+        </form>
+        <div id="status" class="mt-4 text-center text-sm font-medium"></div>
+    </div>
+
+    <script>
+        // 1. YOUR CONFIGURATION
+        const SUPABASE_URL = 'https://etqenbfxzyhpcpudmlqo.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0cWVuYmZ4enlocGNwdWRtbHFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1ODI3MDAsImV4cCI6MjA4NzE1ODcwMH0.5MR78dPRGKbshbHmY1CuAFpS4FMtGtY44IROA-O609c';
+
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // 2. FORM HANDLING
+        const form = document.getElementById('harvestForm');
+        const status = document.getElementById('status');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            status.innerText = "Saving...";
+
+            const payload = {
+                tree_id: parseInt(document.getElementById('tree_id').value),
+                gross_weight_kg: parseFloat(document.getElementById('gross_weight').value),
+                leaf_to_nut_ratio: parseFloat(document.getElementById('ratio').value) || null,
+                notes: document.getElementById('notes').value,
+                harvest_date: new Date().toISOString()
+            };
+
+            const { data, error } = await supabase
+                .from('harvest_logs') // Ensure this matches your table name exactly
+                .insert([payload]);
+
+            if (error) {
+                status.innerText = "Error: " + error.message;
+                status.classList.add('text-red-600');
+            } else {
+                status.innerText = "Success! Logged.";
+                status.classList.add('text-green-600');
+                form.reset();
+            }
+            btn.disabled = false;
+        });
+    </script>
+</body>
+</html>
