@@ -12,55 +12,48 @@
         .page { display: none; }
         .page.active { display: block; }
         #map { height: 70vh; width: 100%; border-radius: 1rem; border: 2px solid #e5e7eb; }
+        th { cursor: pointer; }
+        th:hover { background-color: #f3f4f6; }
     </style>
 </head>
 <body class="bg-gray-50 font-sans text-gray-900">
 
     <header class="bg-emerald-800 text-white p-6 shadow-lg">
-        <div class="container mx-auto flex justify-between items-center">
+        <div class="container mx-auto flex flex-wrap justify-between items-center gap-4">
             <h1 class="text-2xl font-bold tracking-tight cursor-pointer" onclick="showPage('tree-list')">Orchard Database</h1>
-            <nav class="space-x-4">
-                <button onclick="toggleMapView()" id="viewToggle" class="bg-emerald-700 px-4 py-2 rounded-lg text-sm font-bold shadow-inner">Switch to Map</button>
-                <button onclick="showPage('tree-list')" class="hover:underline">Trees List</button>
+            <nav class="flex gap-4 overflow-x-auto pb-2">
+                <button onclick="toggleMapView()" id="viewToggle" class="bg-emerald-700 px-4 py-2 rounded-lg text-sm font-bold shrink-0">Map View</button>
+                <button onclick="showPage('tree-list')" class="hover:underline shrink-0">Trees</button>
+                <button onclick="fetchWorkOrders(); showPage('work-order-list')" class="hover:underline shrink-0">Work Orders</button>
             </nav>
         </div>
     </header>
 
     <main class="container mx-auto p-4 md:p-8">
         <section id="tree-list" class="page active">
-            <div class="mb-6">
-                <input type="text" id="treeSearch" oninput="filterTrees()" placeholder="Search by Tree ID or Variety..." 
-                       class="w-full p-4 rounded-xl border border-gray-300 shadow-sm focus:ring-2 focus:ring-emerald-500 outline-none">
-            </div>
-            <div id="treeGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <p class="text-gray-500">Loading orchard data...</p>
-            </div>
+            <div class="mb-6"><input type="text" id="treeSearch" oninput="filterTrees()" placeholder="Search by Tree ID..." class="w-full p-4 rounded-xl border border-gray-300 shadow-sm"></div>
+            <div id="treeGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
         </section>
 
         <section id="map-view" class="page">
             <div id="map" class="shadow-lg"></div>
-            <p class="text-xs text-gray-500 mt-2 italic text-center">Tap a tree marker to log harvest or create work orders.</p>
         </section>
 
-        <section id="log-harvest" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
-            <h2 class="text-xl font-bold mb-4 text-emerald-800">Log Harvest: <span id="harvest-tree-id"></span></h2>
-            <form id="harvestForm" class="space-y-4">
-                <input type="hidden" id="harvest-id-internal">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Gross Weight (kg)</label>
-                    <input type="number" step="0.01" id="weight_kg" required class="w-full p-3 border rounded-lg">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Leaf to Nut Ratio</label>
-                    <input type="number" step="0.01" id="ratio" placeholder="e.g. 0.15" class="w-full p-3 border rounded-lg">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Quality Notes</label>
-                    <textarea id="harvest-notes" class="w-full p-3 border rounded-lg"></textarea>
-                </div>
-                <button type="submit" class="w-full bg-emerald-600 text-white p-4 rounded-xl font-bold hover:bg-emerald-700 transition">Save Harvest Log</button>
-                <button type="button" onclick="showPage('tree-list')" class="w-full text-gray-500 mt-2">Cancel</button>
-            </form>
+        <section id="work-order-list" class="page">
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50 border-b">
+                        <tr>
+                            <th onclick="sortWO('tree_id')" class="p-4 text-xs font-bold uppercase text-gray-500">Tree ID</th>
+                            <th onclick="sortWO('trees(field_name)')" class="p-4 text-xs font-bold uppercase text-gray-500">Field</th>
+                            <th onclick="sortWO('task_type')" class="p-4 text-xs font-bold uppercase text-gray-500">Type</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Status</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Photo</th>
+                        </tr>
+                    </thead>
+                    <tbody id="woTableBody"></tbody>
+                </table>
+            </div>
         </section>
 
         <section id="work-order" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
@@ -68,175 +61,166 @@
             <form id="workForm" class="space-y-4">
                 <input type="hidden" id="work-id-internal">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Task Type</label>
+                    <label class="block text-sm font-medium">Task Type</label>
                     <select id="task-type" class="w-full p-3 border rounded-lg">
-                        <option>Pruning</option>
-                        <option>Fertilizing</option>
-                        <option>Irrigation Repair</option>
-                        <option>Pest Control</option>
+                        <option>Pruning</option><option>Fertilizing</option><option>Irrigation Repair</option><option>Pest Control</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Instructions / Findings</label>
-                    <textarea id="work-notes" required class="w-full p-3 border rounded-lg" placeholder="e.g. Broken lateral line on North side"></textarea>
+                    <label class="block text-sm font-medium text-gray-700">Attach Photo</label>
+                    <input type="file" id="work-photo" accept="image/*" capture="camera" class="w-full p-2 border border-dashed rounded-lg">
                 </div>
-                <button type="submit" class="w-full bg-orange-600 text-white p-4 rounded-xl font-bold hover:bg-orange-700 transition">Submit Work Order</button>
+                <div>
+                    <label class="block text-sm font-medium">Instructions / Findings</label>
+                    <textarea id="work-notes" required class="w-full p-3 border rounded-lg"></textarea>
+                </div>
+                <button type="submit" id="woSubmitBtn" class="w-full bg-orange-600 text-white p-4 rounded-xl font-bold">Submit Work Order</button>
                 <button type="button" onclick="showPage('tree-list')" class="w-full text-gray-500 mt-2">Cancel</button>
             </form>
+        </section>
+
+        <section id="log-harvest" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
+             <h2 class="text-xl font-bold mb-4 text-emerald-800">Log Harvest: <span id="harvest-tree-id"></span></h2>
+             <form id="harvestForm" class="space-y-4">
+                <input type="hidden" id="harvest-id-internal">
+                <input type="number" step="0.01" id="weight_kg" placeholder="Weight (kg)" required class="w-full p-3 border rounded-lg">
+                <button type="submit" class="w-full bg-emerald-600 text-white p-4 rounded-xl font-bold">Save Harvest</button>
+                <button type="button" onclick="showPage('tree-list')" class="w-full text-gray-500 mt-2">Cancel</button>
+             </form>
         </section>
     </main>
 
     <script>
         const SUPABASE_URL = 'https://etqenbfxzyhpcpudmlqo.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0cWVuYmZ4enlocGNwdWRtbHFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1ODI3MDAsImV4cCI6MjA4NzE1ODcwMH0.5MR78dPRGKbshbHmY1CuAFpS4FMtGtY44IROA-O609c';
-        
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        let orchardData = [];
-        let map;
-        let markers = [];
+        let orchardData = [], workOrders = [], map, markers = [], userMarker;
+        let currentSort = { col: 'tree_id', asc: true };
 
         function showPage(pageId) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.getElementById(pageId).classList.add('active');
-            
-            // Re-render map if switching to it
-            if (pageId === 'map-view') {
-                setTimeout(() => { map.invalidateSize(); }, 100);
-            }
-            window.scrollTo(0,0);
-        }
-
-        function toggleMapView() {
-            const btn = document.getElementById('viewToggle');
-            if (document.getElementById('map-view').classList.contains('active')) {
-                showPage('tree-list');
-                btn.innerText = "Switch to Map";
-            } else {
-                showPage('map-view');
-                btn.innerText = "Switch to Grid";
-                initMap();
-            }
+            if (pageId === 'map-view' && map) setTimeout(() => map.invalidateSize(), 200);
         }
 
         async function fetchTrees() {
-            const { data, error } = await _supabase
-                .from('trees')
-                .select('*, tree_yield_stats(avg_yearly_yield_kg)')
-                .order('tree_id', { ascending: true });
+            const { data } = await _supabase.from('trees').select('*, tree_yield_stats(avg_yearly_yield_kg)').order('tree_id');
+            orchardData = data || [];
+            renderTrees(orchardData);
+            if (map) updateMapMarkers();
+        }
 
-            if (error) {
-                document.getElementById('treeGrid').innerHTML = `<p class="text-red-500">Error: ${error.message}</p>`;
-            } else {
-                orchardData = data;
-                renderTrees(data);
-                if (map) updateMapMarkers();
-            }
+        async function fetchWorkOrders() {
+            const { data } = await _supabase.from('work_orders').select('*, trees(field_name)').order('created_at', { ascending: false });
+            workOrders = data || [];
+            renderWorkOrders();
+        }
+
+        function renderWorkOrders() {
+            const tbody = document.getElementById('woTableBody');
+            tbody.innerHTML = workOrders.map(wo => `
+                <tr class="border-b hover:bg-gray-50">
+                    <td class="p-4 font-bold">${wo.tree_id}</td>
+                    <td class="p-4 text-gray-600">${wo.trees?.field_name || '-'}</td>
+                    <td class="p-4"><span class="bg-gray-100 px-2 py-1 rounded text-xs">${wo.task_type}</span></td>
+                    <td class="p-4 text-xs">${wo.status}</td>
+                    <td class="p-4">
+                        ${wo.photo_url ? `<a href="${wo.photo_url}" target="_blank"><img src="${wo.photo_url}" class="w-10 h-10 object-cover rounded shadow-sm"></a>` : '<span class="text-gray-300">No Photo</span>'}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function sortWO(col) {
+            currentSort.asc = (currentSort.col === col) ? !currentSort.asc : true;
+            currentSort.col = col;
+            workOrders.sort((a, b) => {
+                let valA = col.includes('trees') ? a.trees?.field_name : a[col];
+                let valB = col.includes('trees') ? b.trees?.field_name : b[col];
+                return currentSort.asc ? (valA > valB ? 1 : -1) : (valA < valB ? 1 : -1);
+            });
+            renderWorkOrders();
         }
 
         function initMap() {
             if (map) return;
-            // Initialize map (centering roughly on common user location or first tree)
-            map = L.map('map').setView([-27.65, 152.2], 16); 
-
-            // Satellite Layer
-            L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
-                maxZoom: 20,
-                subdomains:['mt0','mt1','mt2','mt3']
-            }).addTo(map);
+            map = L.map('map').setView([-27.65, 152.2], 18);
+            L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains:['mt0','mt1','mt2','mt3'] }).addTo(map);
+            
+            // Watch current GPS position
+            navigator.geolocation.watchPosition(pos => {
+                const { latitude, longitude } = pos.coords;
+                if (!userMarker) {
+                    userMarker = L.circleMarker([latitude, longitude], { radius: 8, color: 'white', fillColor: '#3b82f6', fillOpacity: 1, weight: 3 }).addTo(map).bindPopup("You are here");
+                } else {
+                    userMarker.setLatLng([latitude, longitude]);
+                }
+            }, null, { enableHighAccuracy: true });
 
             updateMapMarkers();
         }
 
         function updateMapMarkers() {
             markers.forEach(m => map.removeLayer(m));
-            markers = [];
-
-            orchardData.forEach(tree => {
-                if (tree.latitude && tree.longitude) {
-                    const marker = L.marker([tree.latitude, tree.longitude]).addTo(map);
-                    marker.bindPopup(`
-                        <div class="p-2">
-                            <h3 class="font-bold text-lg text-emerald-800">${tree.tree_id}</h3>
-                            <p class="text-sm mb-3">${tree.variety || 'Unknown Variety'}</p>
-                            <div class="flex flex-col gap-2">
-                                <button onclick="openHarvest('${tree.tree_id}')" class="bg-emerald-600 text-white px-3 py-2 rounded text-xs font-bold">Log Harvest</button>
-                                <button onclick="openWorkOrder('${tree.tree_id}')" class="bg-orange-600 text-white px-3 py-2 rounded text-xs font-bold">Work Order</button>
-                            </div>
-                        </div>
-                    `);
-                    markers.push(marker);
-                }
+            markers = orchardData.filter(t => t.latitude).map(tree => {
+                const m = L.marker([tree.latitude, tree.longitude]).addTo(map);
+                m.bindPopup(`<b>${tree.tree_id}</b><br>${tree.field_name || ''}<br><button onclick="openWorkOrder('${tree.tree_id}')" class="bg-orange-600 text-white p-1 rounded text-xs mt-2 w-full">New Work Order</button>`);
+                return m;
             });
-            
-            // Auto-center map on trees if they exist
-            if (markers.length > 0) {
-                const group = new L.featureGroup(markers);
-                map.fitBounds(group.getBounds().pad(0.1));
-            }
         }
 
-        async function updateTreeLocation(treeId) {
-            if (!navigator.geolocation) {
-                alert("Geolocation is not supported by your browser");
-                return;
-            }
-            navigator.geolocation.getCurrentPosition(async (position) => {
-                const lat = position.coords.latitude;
-                const lng = position.coords.longitude;
+        function toggleMapView() {
+            const btn = document.getElementById('viewToggle');
+            const isActive = document.getElementById('map-view').classList.contains('active');
+            showPage(isActive ? 'tree-list' : 'map-view');
+            btn.innerText = isActive ? "Map View" : "Grid View";
+            if (!isActive) initMap();
+        }
 
-                const { error } = await _supabase.from('trees').update({ latitude: lat, longitude: lng }).eq('tree_id', treeId);
+        // --- Work Order Submission with Photo Upload ---
+        document.getElementById('workForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('woSubmitBtn');
+            btn.disabled = true; btn.innerText = "Uploading...";
 
-                if (error) alert("Error: " + error.message);
-                else {
-                    alert(`Location saved for ${treeId}!`);
-                    fetchTrees();
+            const treeId = document.getElementById('work-id-internal').value;
+            const photoFile = document.getElementById('work-photo').files[0];
+            let photoUrl = null;
+
+            if (photoFile) {
+                const fileName = `${treeId}_${Date.now()}.jpg`;
+                const { data, error: uploadError } = await _supabase.storage.from('work-order-photos').upload(fileName, photoFile);
+                if (data) {
+                    const { data: publicData } = _supabase.storage.from('work-order-photos').getPublicUrl(fileName);
+                    photoUrl = publicData.publicUrl;
                 }
-            }, (err) => { alert("GPS Error: " + err.message); }, { enableHighAccuracy: true });
-        }
-
-        function renderTrees(trees) {
-            const grid = document.getElementById('treeGrid');
-            if (trees.length === 0) {
-                grid.innerHTML = '<p class="text-gray-500 p-4">No trees found.</p>';
-                return;
             }
-            grid.innerHTML = trees.map(tree => {
-                const avgYield = tree.tree_yield_stats?.[0]?.avg_yearly_yield_kg || '0.00';
-                return `
-                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition">
-                    <div class="flex justify-between items-start mb-4">
-                        <div>
-                            <h3 class="text-lg font-bold text-gray-900">${tree.tree_id}</h3>
-                            <p class="text-sm text-emerald-600 font-medium">${tree.variety || 'Unknown'}</p>
-                        </div>
-                    </div>
-                    <div class="text-xs text-gray-500 mb-4 bg-gray-50 p-2 rounded-lg">
-                        Avg Yearly Yield: <span class="font-bold text-gray-800">${avgYield} kg</span>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2 mt-4">
+
+            const { error } = await _supabase.from('work_orders').insert([{ 
+                tree_id: treeId, 
+                task_type: document.getElementById('task-type').value, 
+                notes: document.getElementById('work-notes').value, 
+                photo_url: photoUrl,
+                status: 'Pending' 
+            }]);
+
+            btn.disabled = false; btn.innerText = "Submit Work Order";
+            if (error) alert(error.message); else { alert("Saved!"); e.target.reset(); showPage('tree-list'); }
+        };
+
+        // Render functions for grid
+        function renderTrees(trees) {
+            document.getElementById('treeGrid').innerHTML = trees.map(tree => `
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                    <h3 class="text-lg font-bold">${tree.tree_id}</h3>
+                    <p class="text-xs text-gray-500 mb-4 uppercase tracking-wider">${tree.field_name || 'No Field Set'}</p>
+                    <div class="grid grid-cols-2 gap-2">
                         <button onclick="openHarvest('${tree.tree_id}')" class="bg-emerald-50 text-emerald-700 py-2 rounded-lg text-sm font-bold">Log Harvest</button>
                         <button onclick="openWorkOrder('${tree.tree_id}')" class="bg-orange-50 text-orange-700 py-2 rounded-lg text-sm font-bold">Work Order</button>
-                        <button onclick="updateTreeLocation('${tree.tree_id}')" class="col-span-2 mt-2 bg-emerald-800 text-white py-3 rounded-xl font-bold hover:bg-emerald-900 transition">
-                            Update GPS Location
-                        </button>
                     </div>
                 </div>
-            `}).join('');
-        }
-
-        function filterTrees() {
-            const term = document.getElementById('treeSearch').value.toLowerCase();
-            const filtered = orchardData.filter(t => 
-                t.tree_id.toLowerCase().includes(term) || (t.variety && t.variety.toLowerCase().includes(term))
-            );
-            renderTrees(filtered);
-        }
-
-        function openHarvest(id) {
-            document.getElementById('harvest-tree-id').innerText = id;
-            document.getElementById('harvest-id-internal').value = id;
-            showPage('log-harvest');
+            `).join('');
         }
 
         function openWorkOrder(id) {
@@ -245,30 +229,10 @@
             showPage('work-order');
         }
 
-        document.getElementById('harvestForm').onsubmit = async (e) => {
-            e.preventDefault();
-            const { error } = await _supabase.from('harvest_logs').insert([{ 
-                tree_id: document.getElementById('harvest-id-internal').value, 
-                gross_weight_kg: parseFloat(document.getElementById('weight_kg').value), 
-                leaf_to_nut_ratio: parseFloat(document.getElementById('ratio').value) || 0,
-                notes: document.getElementById('harvest-notes').value, 
-                harvest_date: new Date().toISOString().split('T')[0] 
-            }]);
-            if (error) alert("Error: " + error.message);
-            else { alert("Harvest logged!"); fetchTrees(); showPage('tree-list'); e.target.reset(); }
-        };
-
-        document.getElementById('workForm').onsubmit = async (e) => {
-            e.preventDefault();
-            const { error } = await _supabase.from('work_orders').insert([{ 
-                tree_id: document.getElementById('work-id-internal').value, 
-                task_type: document.getElementById('task-type').value, 
-                notes: document.getElementById('work-notes').value, 
-                status: 'Pending' 
-            }]);
-            if (error) alert("Error: " + error.message);
-            else { alert("Work order created!"); showPage('tree-list'); e.target.reset(); }
-        };
+        function filterTrees() {
+            const term = document.getElementById('treeSearch').value.toLowerCase();
+            renderTrees(orchardData.filter(t => t.tree_id.toLowerCase().includes(term)));
+        }
 
         fetchTrees();
     </script>
