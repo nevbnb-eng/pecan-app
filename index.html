@@ -171,7 +171,6 @@
 
         let orchardData = [], workOrders = [], filteredWO = [], map, markers = [];
 
-        // --- CALCULATION LOGIC ---
         const grossInput = document.getElementById('gross_weight');
         const ratioInput = document.getElementById('leaf_ratio');
         const netDisplay = document.getElementById('net_weight_display');
@@ -193,7 +192,6 @@
             window.scrollTo(0,0);
         }
 
-        // --- TREE DATA ---
         async function fetchTrees() {
             const { data, error } = await _supabase.from('trees').select('*').order('tree_id');
             if (error) console.error("Error fetching trees:", error);
@@ -235,7 +233,7 @@
             showPage('tree-detail');
         }
 
-        // --- HARVEST SUBMISSION ---
+        // --- HARVEST SUBMISSION FIX ---
         document.getElementById('harvestForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('harvestSubmitBtn');
@@ -247,13 +245,14 @@
             btn.disabled = true;
             btn.innerText = "Saving to Database...";
 
+            // Fixed: changed 'created-at' to 'created_at' to match your DB schema
             const { error } = await _supabase.from('harvest_logs').insert([{
                 tree_id: treeId,
                 gross_weight_kg: gross,
                 leaf_to_nut_ratio: ratio,
                 net_nut_weight_kg: net,
                 notes: document.getElementById('harvest-notes').value,
-                "created-at": new Date().toISOString()
+                created_at: new Date().toISOString() 
             }]);
 
             if (error) {
@@ -270,7 +269,37 @@
             }
         };
 
-        // --- WORK ORDER DATA ---
+        // --- WORK ORDER SUBMISSION FIX ---
+        document.getElementById('workForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('woSubmitBtn');
+            const treeId = document.getElementById('work-id-internal').value;
+            
+            btn.disabled = true;
+            btn.innerText = "Submitting...";
+
+            // Assuming your 'work_orders' table uses 'instructions' for the text field
+            const { error } = await _supabase.from('work_orders').insert([{
+                tree_id: treeId,
+                task_type: document.getElementById('task-type').value,
+                instructions: document.getElementById('work-instructions').value,
+                status: 'open',
+                created_at: new Date().toISOString()
+            }]);
+
+            if (error) {
+                alert("Error: " + error.message);
+                btn.disabled = false;
+                btn.innerText = "Submit Work Order";
+            } else {
+                alert("Work order created!");
+                e.target.reset();
+                showPage('tree-list');
+                btn.disabled = false;
+                btn.innerText = "Submit Work Order";
+            }
+        };
+
         async function fetchWorkOrders() {
             const { data } = await _supabase.from('work_orders').select('*').order('created_at', { ascending: false });
             workOrders = data || [];
@@ -339,7 +368,6 @@
             else { fetchWorkOrders(); showPage('work-order-list'); }
         }
 
-        // --- MAP LOGIC ---
         function initMap() {
             if (map) return;
             map = L.map('map').setView([-27.65, 152.2], 18);
