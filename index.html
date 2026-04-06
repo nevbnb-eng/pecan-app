@@ -14,6 +14,7 @@
         #map { height: 75vh; width: 100%; border-radius: 1rem; border: 2px solid #e5e7eb; }
         th { cursor: pointer; }
         th:hover { background-color: #f3f4f6; }
+        tr.clickable:hover { background-color: #f9fafb; cursor: pointer; }
     </style>
 </head>
 <body class="bg-gray-50 font-sans text-gray-900">
@@ -44,12 +45,10 @@
         <section id="tree-detail" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
             <h2 class="text-3xl font-bold text-emerald-900" id="td-id"></h2>
             <p class="text-emerald-600 font-bold uppercase tracking-wider" id="td-field"></p>
-            
             <div class="my-4 space-y-1">
                 <p class="text-gray-600">Variety: <span id="td-variety" class="font-semibold text-gray-900"></span></p>
                 <p class="text-gray-600 mb-6">Age: <span id="td-age" class="font-semibold text-gray-900"></span></p>
             </div>
-            
             <div class="space-y-3">
                 <button onclick="openHarvest(document.getElementById('td-id').innerText)" class="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-md">Log Harvest</button>
                 <button onclick="openWorkOrder(document.getElementById('td-id').innerText)" class="w-full bg-orange-600 text-white py-4 rounded-xl font-bold shadow-md">New Work Order</button>
@@ -64,14 +63,37 @@
                 <table class="w-full text-left">
                     <thead class="bg-gray-50 border-b">
                         <tr>
-                            <th onclick="sortWO('tree_id')" class="p-4 text-xs font-bold uppercase text-gray-500">Tree ID</th>
-                            <th onclick="sortWO('task_type')" class="p-4 text-xs font-bold uppercase text-gray-500">Type</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Tree ID</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Type</th>
                             <th class="p-4 text-xs font-bold uppercase text-gray-500">Status</th>
                             <th class="p-4 text-xs font-bold uppercase text-gray-500">Photo</th>
                         </tr>
                     </thead>
                     <tbody id="woTableBody"></tbody>
                 </table>
+            </div>
+        </section>
+
+        <section id="wo-detail" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
+            <h2 class="text-2xl font-bold text-orange-900 mb-2">Work Order Detail</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs font-bold uppercase text-gray-400">Target Tree</label>
+                    <p id="wod-tree" class="text-lg font-bold"></p>
+                </div>
+                <div>
+                    <label class="text-xs font-bold uppercase text-gray-400">Task Type</label>
+                    <p id="wod-type" class="font-semibold"></p>
+                </div>
+                <div>
+                    <label class="text-xs font-bold uppercase text-gray-400">Instructions / Findings</label>
+                    <p id="wod-instructions" class="text-gray-700 bg-gray-50 p-3 rounded-lg border italic"></p>
+                </div>
+                <div id="wod-photo-container" class="hidden">
+                    <label class="text-xs font-bold uppercase text-gray-400">Logged Photo</label>
+                    <img id="wod-photo" src="" class="w-full rounded-lg mt-2 border shadow-sm">
+                </div>
+                <button onclick="showPage('work-order-list')" class="w-full bg-gray-800 text-white py-3 rounded-xl font-bold mt-4">Back to List</button>
             </div>
         </section>
 
@@ -115,7 +137,6 @@
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         let orchardData = [], workOrders = [], filteredWO = [], map, markers = [], userMarker;
-        let currentSort = { col: 'tree_id', asc: true };
 
         function showPage(pageId) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -132,49 +153,122 @@
             if (map) updateMapMarkers();
         }
 
-        function filterTrees() {
-            const term = document.getElementById('treeSearch').value.toLowerCase();
-            const filtered = orchardData.filter(t => 
-                t.tree_id.toLowerCase().includes(term) || 
-                (t.field_name && t.field_name.toLowerCase().includes(term)) ||
-                (t.variety && t.variety.toLowerCase().includes(term))
-            );
-            renderTrees(filtered);
+        function renderTrees(trees) {
+            document.getElementById('treeGrid').innerHTML = trees.map(tree => `
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 clickable" onclick="viewTreeDetail('${tree.tree_id}')">
+                    <h3 class="text-xl font-bold">${tree.tree_id}</h3>
+                    <p class="text-xs text-emerald-600 font-bold uppercase mb-4">${tree.field_name || 'No Field'}</p>
+                    <button class="w-full bg-gray-50 text-gray-600 py-2 rounded-lg text-sm font-bold">View Actions</button>
+                </div>
+            `).join('');
         }
 
         function viewTreeDetail(id) {
             const tree = orchardData.find(t => t.tree_id === id);
             if (!tree) return;
-            
             document.getElementById('td-id').innerText = tree.tree_id;
             document.getElementById('td-field').innerText = tree.field_name || 'No Field Assigned';
             document.getElementById('td-variety').innerText = tree.variety || 'N/A';
-            
-            // Age Calculation
             if (tree.date_of_planting) {
-                const planted = new Date(tree.date_of_planting);
-                const ageDifMs = Date.now() - planted.getTime();
-                const ageDate = new Date(ageDifMs); 
-                const years = Math.abs(ageDate.getUTCFullYear() - 1970);
-                document.getElementById('td-age').innerText = years + (years === 1 ? " year" : " years");
-            } else {
-                document.getElementById('td-age').innerText = "Unknown";
-            }
-
+                const years = Math.abs(new Date(Date.now() - new Date(tree.date_of_planting).getTime()).getUTCFullYear() - 1970);
+                document.getElementById('td-age').innerText = years + " years";
+            } else { document.getElementById('td-age').innerText = "Unknown"; }
             showPage('tree-detail');
         }
 
+        async function fetchWorkOrders() {
+            const { data } = await _supabase.from('work_orders').select('*').order('created_at', { ascending: false });
+            workOrders = data || [];
+            filteredWO = [...workOrders];
+            renderWorkOrders();
+        }
+
+        function renderWorkOrders() {
+            const tbody = document.getElementById('woTableBody');
+            tbody.innerHTML = filteredWO.map(wo => `
+                <tr class="border-b clickable" onclick="viewWODetail('${wo.wo_id}')">
+                    <td class="p-4 font-bold">${wo.tree_id}</td>
+                    <td class="p-4">${wo.task_type}</td>
+                    <td class="p-4 text-xs font-semibold">${wo.status}</td>
+                    <td class="p-4">${wo.photo_url ? '📷' : '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function viewWODetail(woId) {
+            const wo = workOrders.find(w => w.wo_id == woId);
+            if (!wo) return;
+            document.getElementById('wod-tree').innerText = wo.tree_id;
+            document.getElementById('wod-type').innerText = wo.task_type;
+            document.getElementById('wod-instructions').innerText = wo.instructions || "No instructions provided.";
+            if (wo.photo_url) {
+                document.getElementById('wod-photo').src = wo.photo_url;
+                document.getElementById('wod-photo-container').classList.remove('hidden');
+            } else {
+                document.getElementById('wod-photo-container').classList.add('hidden');
+            }
+            showPage('wo-detail');
+        }
+
+        async function updateTreeLocation(treeId) {
+            if (!navigator.geolocation) return alert("Geolocation not supported");
+            
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+                
+                // Enhanced error reporting
+                const { error } = await _supabase.from('trees')
+                    .update({ latitude: lat, longitude: lng })
+                    .eq('tree_id', treeId);
+
+                if (error) {
+                    console.error("Supabase Update Error:", error);
+                    alert(`Update Failed: ${error.message}\n\nCheck if RLS allows UPDATES on the 'trees' table.`);
+                } else {
+                    alert(`GPS updated for ${treeId} at ${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                    fetchTrees();
+                }
+            }, (err) => alert("GPS Hardware Error: " + err.message), { enableHighAccuracy: true });
+        }
+
+        // WORK ORDER FORM SUBMIT
+        document.getElementById('workForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('woSubmitBtn');
+            btn.disabled = true; btn.innerText = "Saving...";
+            try {
+                const treeId = document.getElementById('work-id-internal').value;
+                const photoFile = document.getElementById('work-photo').files[0];
+                let photoUrl = null;
+
+                if (photoFile) {
+                    const fileName = `${treeId}_${Date.now()}.jpg`;
+                    const { data: upData, error: upErr } = await _supabase.storage.from('work-order-photos').upload(fileName, photoFile);
+                    if (upErr) throw upErr;
+                    photoUrl = _supabase.storage.from('work-order-photos').getPublicUrl(fileName).data.publicUrl;
+                }
+
+                let lat = null, lng = null;
+                const pos = await new Promise(r => navigator.geolocation.getCurrentPosition(r, () => r(null), {enableHighAccuracy:true}));
+                if(pos) { lat = pos.coords.latitude; lng = pos.coords.longitude; }
+
+                const { error: dbErr } = await _supabase.from('work_orders').insert([{ 
+                    tree_id: treeId, task_type: document.getElementById('task-type').value, 
+                    instructions: document.getElementById('work-instructions').value, photo_url: photoUrl, 
+                    status: 'Pending', gps_lat_at_log: lat, gps_long_at_log: lng 
+                }]);
+                if (dbErr) throw dbErr;
+                alert("Work Order Logged!"); e.target.reset(); showPage('tree-list');
+            } catch (err) { alert("Error: " + err.message); }
+            btn.disabled = false; btn.innerText = "Submit Work Order";
+        };
+
+        // Standard Map & Init
         function initMap() {
             if (map) return;
             map = L.map('map').setView([-27.65, 152.2], 18);
             L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains:['mt0','mt1','mt2','mt3'] }).addTo(map);
-            
-            navigator.geolocation.watchPosition(pos => {
-                const { latitude, longitude } = pos.coords;
-                if (!userMarker) userMarker = L.circleMarker([latitude, longitude], { radius: 8, color: 'white', fillColor: '#3b82f6', fillOpacity: 1, weight: 3 }).addTo(map);
-                else userMarker.setLatLng([latitude, longitude]);
-            }, null, { enableHighAccuracy: true });
-
             updateMapMarkers();
         }
 
@@ -194,135 +288,9 @@
             if (!isActive) initMap();
         }
 
-        function renderTrees(trees) {
-            document.getElementById('treeGrid').innerHTML = trees.map(tree => `
-                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100" onclick="viewTreeDetail('${tree.tree_id}')">
-                    <h3 class="text-xl font-bold">${tree.tree_id}</h3>
-                    <p class="text-xs text-emerald-600 font-bold uppercase mb-4">${tree.field_name || 'No Field'}</p>
-                    <button class="w-full bg-gray-50 text-gray-600 py-2 rounded-lg text-sm font-bold">View Actions</button>
-                </div>
-            `).join('');
-        }
-
-        // --- UPDATED WORK ORDER SUBMISSION ---
-        document.getElementById('workForm').onsubmit = async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('woSubmitBtn');
-            btn.disabled = true; 
-            btn.innerText = "Processing...";
-
-            try {
-                const treeId = document.getElementById('work-id-internal').value;
-                const photoFile = document.getElementById('work-photo').files[0];
-                let photoUrl = null;
-
-                // 1. Handle Photo Upload
-                if (photoFile) {
-                    const fileName = `${treeId}_${Date.now()}.jpg`;
-                    const { data: uploadData, error: uploadError } = await _supabase.storage.from('work-order-photos').upload(fileName, photoFile);
-                    if (uploadError) throw new Error("Photo Upload Failed: " + uploadError.message);
-                    if (uploadData) {
-                        photoUrl = _supabase.storage.from('work-order-photos').getPublicUrl(fileName).data.publicUrl;
-                    }
-                }
-
-                // 2. Get Current GPS for the log entry
-                let lat = null, lng = null;
-                const pos = await new Promise((resolve) => {
-                    navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), {enableHighAccuracy: true});
-                });
-                if(pos) { lat = pos.coords.latitude; lng = pos.coords.longitude; }
-
-                // 3. Insert into DB with your specific column names
-                const { error: dbError } = await _supabase.from('work_orders').insert([{ 
-                    tree_id: treeId, 
-                    task_type: document.getElementById('task-type').value, 
-                    instructions: document.getElementById('work-instructions').value, 
-                    photo_url: photoUrl, 
-                    status: 'Pending',
-                    gps_lat_at_log: lat,
-                    gps_long_at_log: lng
-                }]);
-
-                if (dbError) throw dbError;
-
-                alert("Work Order Created Successfully!");
-                e.target.reset();
-                showPage('tree-list');
-
-            } catch (err) {
-                console.error("Submission Error:", err);
-                alert("Error: " + err.message);
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "Submit Work Order";
-            }
-        };
-
-        // --- HARVEST LOG SUBMISSION ---
-        document.getElementById('harvestForm').onsubmit = async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('harvestSubmitBtn');
-            btn.disabled = true;
-            
-            const treeId = document.getElementById('harvest-id-internal').value;
-            const weight = document.getElementById('weight_kg').value;
-
-            const { error } = await _supabase.from('harvest_logs').insert([{ 
-                tree_id: treeId, 
-                gross_weight_kg: parseFloat(weight),
-                harvest_date: new Date().toISOString().split('T')[0]
-            }]);
-
-            if (error) {
-                alert("Error: " + error.message);
-            } else {
-                alert("Harvest logged!");
-                e.target.reset();
-                showPage('tree-list');
-            }
-            btn.disabled = false;
-        };
-
-        async function fetchWorkOrders() {
-            const { data } = await _supabase.from('work_orders').select('*').order('created_at', { ascending: false });
-            workOrders = data || [];
-            filteredWO = [...workOrders];
-            renderWorkOrders();
-        }
-
-        function renderWorkOrders() {
-            const tbody = document.getElementById('woTableBody');
-            tbody.innerHTML = filteredWO.map(wo => `
-                <tr class="border-b">
-                    <td class="p-4 font-bold">${wo.tree_id}</td>
-                    <td class="p-4">${wo.task_type}</td>
-                    <td class="p-4 text-xs">${wo.status}</td>
-                    <td class="p-4">${wo.photo_url ? '✅' : '-'}</td>
-                </tr>
-            `).join('');
-        }
-
-        function openHarvest(id) {
-            document.getElementById('harvest-tree-id').innerText = id;
-            document.getElementById('harvest-id-internal').value = id;
-            showPage('log-harvest');
-        }
-
-        function openWorkOrder(id) {
-            document.getElementById('work-tree-id').innerText = id;
-            document.getElementById('work-id-internal').value = id;
-            showPage('work-order');
-        }
-
-        async function updateTreeLocation(treeId) {
-            if (!navigator.geolocation) return alert("Geolocation not supported");
-            navigator.geolocation.getCurrentPosition(async (pos) => {
-                const { error } = await _supabase.from('trees').update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }).eq('tree_id', treeId);
-                if (!error) { alert(`GPS updated for ${treeId}`); fetchTrees(); }
-            }, (err) => alert("GPS Error: " + err.message), { enableHighAccuracy: true });
-        }
-
+        function openHarvest(id) { document.getElementById('harvest-tree-id').innerText = id; document.getElementById('harvest-id-internal').value = id; showPage('log-harvest'); }
+        function openWorkOrder(id) { document.getElementById('work-tree-id').innerText = id; document.getElementById('work-id-internal').value = id; showPage('work-order'); }
+        
         fetchTrees();
     </script>
 </body>
