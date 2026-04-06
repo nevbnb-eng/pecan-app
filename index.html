@@ -57,6 +57,36 @@
             </div>
         </section>
 
+        <section id="log-harvest" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
+             <h2 class="text-xl font-bold mb-4 text-emerald-800">Log Harvest: <span id="harvest-tree-id"></span></h2>
+             <form id="harvestForm" class="space-y-4">
+                <input type="hidden" id="harvest-id-internal">
+                
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Gross Weight (kg)</label>
+                    <input type="number" step="0.01" id="gross_weight" placeholder="Total bucket weight" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Leaf-to-Nut Ratio (0.0 to 1.0)</label>
+                    <input type="number" step="0.01" min="0" max="1" id="leaf_ratio" placeholder="e.g. 0.15" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                </div>
+
+                <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                    <p class="text-sm text-emerald-800 font-semibold">Calculated Net Nut Weight:</p>
+                    <p class="text-2xl font-bold text-emerald-900"><span id="net_weight_display">0.00</span> kg</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Notes (Optional)</label>
+                    <textarea id="harvest-notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500" rows="3" placeholder="Condition of nuts, weather, etc..."></textarea>
+                </div>
+
+                <button type="submit" id="harvestSubmitBtn" class="w-full bg-emerald-600 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-emerald-700">Save Harvest</button>
+                <button type="button" onclick="showPage('tree-list')" class="w-full text-gray-500 mt-2">Cancel</button>
+             </form>
+        </section>
+
         <section id="work-order-list" class="page">
             <div class="mb-6"><input type="text" id="woSearch" oninput="filterWorkOrders()" placeholder="Filter work orders by ID, Type, or Status..." class="w-full p-4 rounded-xl border border-gray-300 shadow-sm outline-none focus:ring-2 focus:ring-orange-500"></div>
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden overflow-x-auto">
@@ -132,16 +162,6 @@
                 <button type="button" onclick="showPage('tree-list')" class="w-full text-gray-500 mt-2">Cancel</button>
             </form>
         </section>
-
-        <section id="log-harvest" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
-             <h2 class="text-xl font-bold mb-4 text-emerald-800">Log Harvest: <span id="harvest-tree-id"></span></h2>
-             <form id="harvestForm" class="space-y-4">
-                <input type="hidden" id="harvest-id-internal">
-                <input type="number" step="0.01" id="weight_kg" placeholder="Weight (kg)" required class="w-full p-3 border rounded-lg">
-                <button type="submit" id="harvestSubmitBtn" class="w-full bg-emerald-600 text-white p-4 rounded-xl font-bold">Save Harvest</button>
-                <button type="button" onclick="showPage('tree-list')" class="w-full text-gray-500 mt-2">Cancel</button>
-             </form>
-        </section>
     </main>
 
     <script>
@@ -149,7 +169,22 @@
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0cWVuYmZ4enlocGNwdWRtbHFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1ODI3MDAsImV4cCI6MjA4NzE1ODcwMH0.5MR78dPRGKbshbHmY1CuAFpS4FMtGtY44IROA-O609c';
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        let orchardData = [], workOrders = [], filteredWO = [], map, markers = [], userMarker;
+        let orchardData = [], workOrders = [], filteredWO = [], map, markers = [];
+
+        // --- CALCULATION LOGIC ---
+        const grossInput = document.getElementById('gross_weight');
+        const ratioInput = document.getElementById('leaf_ratio');
+        const netDisplay = document.getElementById('net_weight_display');
+
+        function calculateNet() {
+            const gross = parseFloat(grossInput.value) || 0;
+            const ratio = parseFloat(ratioInput.value) || 0;
+            const net = gross * (1 - ratio);
+            netDisplay.innerText = net.toFixed(2);
+        }
+
+        grossInput.addEventListener('input', calculateNet);
+        ratioInput.addEventListener('input', calculateNet);
 
         function showPage(pageId) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -200,6 +235,41 @@
             showPage('tree-detail');
         }
 
+        // --- HARVEST SUBMISSION ---
+        document.getElementById('harvestForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('harvestSubmitBtn');
+            const treeId = document.getElementById('harvest-id-internal').value;
+            const gross = parseFloat(grossInput.value);
+            const ratio = parseFloat(ratioInput.value);
+            const net = gross * (1 - ratio);
+
+            btn.disabled = true;
+            btn.innerText = "Saving to Database...";
+
+            const { error } = await _supabase.from('harvest_logs').insert([{
+                tree_id: treeId,
+                gross_weight_kg: gross,
+                leaf_to_nut_ratio: ratio,
+                net_nut_weight_kg: net,
+                notes: document.getElementById('harvest-notes').value,
+                "created-at": new Date().toISOString()
+            }]);
+
+            if (error) {
+                alert("Error saving harvest: " + error.message);
+                btn.disabled = false;
+                btn.innerText = "Save Harvest";
+            } else {
+                alert(`Harvest logged for ${treeId}! Net weight: ${net.toFixed(2)}kg`);
+                e.target.reset();
+                netDisplay.innerText = "0.00";
+                showPage('tree-list');
+                btn.disabled = false;
+                btn.innerText = "Save Harvest";
+            }
+        };
+
         // --- WORK ORDER DATA ---
         async function fetchWorkOrders() {
             const { data } = await _supabase.from('work_orders').select('*').order('created_at', { ascending: false });
@@ -233,25 +303,19 @@
         function viewWODetail(woId) {
             const wo = workOrders.find(w => w.wo_id == woId);
             if (!wo) return;
-            
             document.getElementById('wod-id-internal').value = wo.wo_id;
             document.getElementById('wod-tree').innerText = wo.tree_id;
             document.getElementById('wod-type').innerText = wo.task_type;
             document.getElementById('wod-status').innerText = wo.status;
             document.getElementById('wod-instructions').innerText = wo.instructions || "No instructions provided.";
-            
-            // Photo display
             if (wo.photo_url) {
                 document.getElementById('wod-photo').src = wo.photo_url;
                 document.getElementById('wod-photo-container').classList.remove('hidden');
             } else {
                 document.getElementById('wod-photo-container').classList.add('hidden');
             }
-
-            // Close logic
             const closeBtn = document.getElementById('close-wo-btn');
             const stamp = document.getElementById('closed-timestamp');
-            
             if (wo.status === 'closed') {
                 closeBtn.classList.add('hidden');
                 document.getElementById('wod-status').className = "font-bold uppercase text-sm text-gray-400";
@@ -264,82 +328,15 @@
                 stamp.classList.add('hidden');
                 document.getElementById('wod-status').className = "font-bold uppercase text-sm text-orange-600";
             }
-
             showPage('wo-detail');
         }
 
         async function handleCloseWorkOrder() {
             const woId = document.getElementById('wod-id-internal').value;
-            const btn = document.getElementById('close-wo-btn');
-            
-            if (!confirm("Are you sure you want to mark this as CLOSED?")) return;
-
-            btn.disabled = true;
-            btn.innerText = "Closing...";
-
-            const { error } = await _supabase
-                .from('work_orders')
-                .update({ 
-                    status: 'closed', 
-                    closed_at: new Date().toISOString() 
-                })
-                .eq('wo_id', woId);
-
-            if (error) {
-                alert("Error closing work order: " + error.message);
-                btn.disabled = false;
-                btn.innerText = "Close Work Order";
-            } else {
-                alert("Work order closed successfully.");
-                await fetchWorkOrders(); // Refresh list
-                showPage('work-order-list');
-            }
-        }
-
-        // --- SUBMISSIONS ---
-        document.getElementById('workForm').onsubmit = async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('woSubmitBtn');
-            btn.disabled = true; btn.innerText = "Saving...";
-            try {
-                const treeId = document.getElementById('work-id-internal').value;
-                const photoFile = document.getElementById('work-photo').files[0];
-                let photoUrl = null;
-
-                if (photoFile) {
-                    const fileName = `${treeId}_${Date.now()}.jpg`;
-                    const { data: upData, error: upErr } = await _supabase.storage.from('work-order-photos').upload(fileName, photoFile);
-                    if (upErr) throw upErr;
-                    photoUrl = _supabase.storage.from('work-order-photos').getPublicUrl(fileName).data.publicUrl;
-                }
-
-                let lat = null, lng = null;
-                const pos = await new Promise(r => navigator.geolocation.getCurrentPosition(r, () => r(null), {enableHighAccuracy:true}));
-                if(pos) { lat = pos.coords.latitude; lng = pos.coords.longitude; }
-
-                const { error: dbErr } = await _supabase.from('work_orders').insert([{ 
-                    tree_id: treeId, 
-                    task_type: document.getElementById('task-type').value, 
-                    instructions: document.getElementById('work-instructions').value, 
-                    photo_url: photoUrl, 
-                    status: 'open', // Updated as requested
-                    gps_lat_at_log: lat, 
-                    gps_long_at_log: lng 
-                }]);
-                if (dbErr) throw dbErr;
-                alert("Work Order Logged!"); e.target.reset(); showPage('tree-list');
-            } catch (err) { alert("Error: " + err.message); }
-            btn.disabled = false; btn.innerText = "Submit Work Order";
-        };
-
-        // --- GPS UPDATE ---
-        async function updateTreeLocation(treeId) {
-            if (!navigator.geolocation) return alert("Geolocation not supported");
-            navigator.geolocation.getCurrentPosition(async (pos) => {
-                const { error } = await _supabase.from('trees').update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }).eq('tree_id', treeId);
-                if (error) alert("Update Failed: " + error.message);
-                else { alert(`GPS updated for ${treeId}`); fetchTrees(); }
-            }, (err) => alert("GPS Error: " + err.message), { enableHighAccuracy: true });
+            if (!confirm("Mark this as CLOSED?")) return;
+            const { error } = await _supabase.from('work_orders').update({ status: 'closed', closed_at: new Date().toISOString() }).eq('wo_id', woId);
+            if (error) alert("Error: " + error.message);
+            else { fetchWorkOrders(); showPage('work-order-list'); }
         }
 
         // --- MAP LOGIC ---
@@ -366,8 +363,25 @@
             if (!isActive) initMap();
         }
 
-        function openHarvest(id) { document.getElementById('harvest-tree-id').innerText = id; document.getElementById('harvest-id-internal').value = id; showPage('log-harvest'); }
-        function openWorkOrder(id) { document.getElementById('work-tree-id').innerText = id; document.getElementById('work-id-internal').value = id; showPage('work-order'); }
+        async function updateTreeLocation(treeId) {
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                const { error } = await _supabase.from('trees').update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }).eq('tree_id', treeId);
+                if (error) alert(error.message);
+                else { alert(`GPS updated for ${treeId}`); fetchTrees(); }
+            }, (err) => alert(err.message), { enableHighAccuracy: true });
+        }
+
+        function openHarvest(id) { 
+            document.getElementById('harvest-tree-id').innerText = id; 
+            document.getElementById('harvest-id-internal').value = id; 
+            showPage('log-harvest'); 
+        }
+
+        function openWorkOrder(id) { 
+            document.getElementById('work-tree-id').innerText = id; 
+            document.getElementById('work-id-internal').value = id; 
+            showPage('work-order'); 
+        }
         
         fetchTrees();
     </script>
