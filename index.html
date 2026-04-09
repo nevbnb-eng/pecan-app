@@ -73,7 +73,7 @@
                 </div>
 
                 <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
-                    <p class="text-sm text-emerald-800 font-semibold">Calculated Net Nut Weight:</p>
+                    <p class="text-sm text-emerald-800 font-semibold">Live Calculation (Preview):</p>
                     <p class="text-2xl font-bold text-emerald-900"><span id="net_weight_display">0.00</span> kg</p>
                 </div>
 
@@ -88,7 +88,7 @@
         </section>
 
         <section id="work-order-list" class="page">
-            <div class="mb-6"><input type="text" id="woSearch" oninput="filterWorkOrders()" placeholder="Filter work orders by ID, Type, or Status..." class="w-full p-4 rounded-xl border border-gray-300 shadow-sm outline-none focus:ring-2 focus:ring-orange-500"></div>
+            <div class="mb-6"><input type="text" id="woSearch" oninput="filterWorkOrders()" placeholder="Filter work orders..." class="w-full p-4 rounded-xl border border-gray-300 shadow-sm outline-none focus:ring-2 focus:ring-orange-500"></div>
             <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden overflow-x-auto">
                 <table class="w-full text-left">
                     <thead class="bg-gray-50 border-b">
@@ -96,7 +96,7 @@
                             <th class="p-4 text-xs font-bold uppercase text-gray-500">Tree ID</th>
                             <th class="p-4 text-xs font-bold uppercase text-gray-500">Type</th>
                             <th class="p-4 text-xs font-bold uppercase text-gray-500">Status</th>
-                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Photo</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Logged</th>
                         </tr>
                     </thead>
                     <tbody id="woTableBody"></tbody>
@@ -123,16 +123,12 @@
                     <p id="wod-type" class="font-semibold"></p>
                 </div>
                 <div>
-                    <label class="text-xs font-bold uppercase text-gray-400">Instructions / Findings</label>
+                    <label class="text-xs font-bold uppercase text-gray-400">Instructions</label>
                     <p id="wod-instructions" class="text-gray-700 bg-gray-50 p-3 rounded-lg border italic"></p>
-                </div>
-                <div id="wod-photo-container" class="hidden">
-                    <label class="text-xs font-bold uppercase text-gray-400">Logged Photo</label>
-                    <img id="wod-photo" src="" class="w-full rounded-lg mt-2 border shadow-sm">
                 </div>
                 
                 <div id="close-action-area" class="pt-4 border-t border-gray-100">
-                    <button id="close-wo-btn" onclick="handleCloseWorkOrder()" class="w-full bg-red-600 text-white py-4 rounded-xl font-bold shadow-md hover:bg-red-700 transition-colors">Close Work Order</button>
+                    <button id="close-wo-btn" onclick="handleCloseWorkOrder()" class="w-full bg-red-600 text-white py-4 rounded-xl font-bold shadow-md hover:bg-red-700">Close Work Order</button>
                     <p id="closed-timestamp" class="text-center text-xs text-gray-400 mt-2 hidden"></p>
                 </div>
 
@@ -149,10 +145,6 @@
                     <select id="task-type" class="w-full p-3 border rounded-lg">
                         <option>Pruning</option><option>Fertilizing</option><option>Irrigation Repair</option><option>Pest Control</option><option>Replace Tree</option>
                     </select>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium">Attach Photo</label>
-                    <input type="file" id="work-photo" accept="image/*" capture="camera" class="w-full p-2 border border-dashed rounded-lg">
                 </div>
                 <div>
                     <label class="block text-sm font-medium">Instructions / Findings</label>
@@ -233,24 +225,23 @@
             showPage('tree-detail');
         }
 
-        // --- HARVEST SUBMISSION FIX ---
+        // --- HARVEST SUBMISSION (FIXED FOR GENERATED COLUMN) ---
         document.getElementById('harvestForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('harvestSubmitBtn');
             const treeId = document.getElementById('harvest-id-internal').value;
             const gross = parseFloat(grossInput.value);
             const ratio = parseFloat(ratioInput.value);
-            const net = gross * (1 - ratio);
 
             btn.disabled = true;
             btn.innerText = "Saving to Database...";
 
-            // Fixed: changed 'created-at' to 'created_at' to match your DB schema
+            // NOTICE: We do NOT send net_nut_weight_kg. 
+            // Postgres calculates it automatically.
             const { error } = await _supabase.from('harvest_logs').insert([{
                 tree_id: treeId,
                 gross_weight_kg: gross,
                 leaf_to_nut_ratio: ratio,
-                net_nut_weight_kg: net,
                 notes: document.getElementById('harvest-notes').value,
                 created_at: new Date().toISOString() 
             }]);
@@ -260,16 +251,17 @@
                 btn.disabled = false;
                 btn.innerText = "Save Harvest";
             } else {
-                alert(`Harvest logged for ${treeId}! Net weight: ${net.toFixed(2)}kg`);
+                alert(`Harvest logged for ${treeId}!`);
                 e.target.reset();
                 netDisplay.innerText = "0.00";
                 showPage('tree-list');
                 btn.disabled = false;
                 btn.innerText = "Save Harvest";
+                fetchTrees();
             }
         };
 
-        // --- WORK ORDER SUBMISSION FIX ---
+        // --- WORK ORDER SUBMISSION (FIXED SCHEMA NAMES) ---
         document.getElementById('workForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('woSubmitBtn');
@@ -278,7 +270,6 @@
             btn.disabled = true;
             btn.innerText = "Submitting...";
 
-            // Assuming your 'work_orders' table uses 'instructions' for the text field
             const { error } = await _supabase.from('work_orders').insert([{
                 tree_id: treeId,
                 task_type: document.getElementById('task-type').value,
@@ -314,7 +305,7 @@
                     <td class="p-4 font-bold">${wo.tree_id}</td>
                     <td class="p-4">${wo.task_type}</td>
                     <td class="p-4 text-xs font-semibold ${wo.status === 'closed' ? 'text-gray-400' : 'text-orange-600'}">${wo.status}</td>
-                    <td class="p-4">${wo.photo_url ? '📷' : '-'}</td>
+                    <td class="p-4 text-xs text-gray-400">${new Date(wo.created_at).toLocaleDateString()}</td>
                 </tr>
             `).join('');
         }
@@ -337,12 +328,7 @@
             document.getElementById('wod-type').innerText = wo.task_type;
             document.getElementById('wod-status').innerText = wo.status;
             document.getElementById('wod-instructions').innerText = wo.instructions || "No instructions provided.";
-            if (wo.photo_url) {
-                document.getElementById('wod-photo').src = wo.photo_url;
-                document.getElementById('wod-photo-container').classList.remove('hidden');
-            } else {
-                document.getElementById('wod-photo-container').classList.add('hidden');
-            }
+            
             const closeBtn = document.getElementById('close-wo-btn');
             const stamp = document.getElementById('closed-timestamp');
             if (wo.status === 'closed') {
