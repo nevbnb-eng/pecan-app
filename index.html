@@ -45,10 +45,38 @@
         <section id="tree-detail" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
             <h2 class="text-3xl font-bold text-emerald-900" id="td-id"></h2>
             <p class="text-emerald-600 font-bold uppercase tracking-wider" id="td-field"></p>
+            
             <div class="my-4 space-y-1">
                 <p class="text-gray-600">Variety: <span id="td-variety" class="font-semibold text-gray-900"></span></p>
-                <p class="text-gray-600 mb-6">Age: <span id="td-age" class="font-semibold text-gray-900"></span></p>
+                <p class="text-gray-600">Age: <span id="td-age" class="font-semibold text-gray-900"></span></p>
             </div>
+
+            <div class="bg-emerald-50 rounded-xl p-4 my-6 border border-emerald-100">
+                <h4 class="text-xs font-bold text-emerald-700 uppercase mb-3">Yield Performance</h4>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <p class="text-xs text-emerald-600">Avg. Yield (Lifetime)</p>
+                        <p id="avg-yield" class="text-xl font-black text-emerald-900">0.00 kg</p>
+                    </div>
+                    <div>
+                        <p class="text-xs text-emerald-600">Total Harvests</p>
+                        <p id="total-count" class="text-xl font-black text-emerald-900">0</p>
+                    </div>
+                </div>
+                <div class="overflow-hidden rounded-lg border border-emerald-200 bg-white">
+                    <table class="w-full text-sm">
+                        <thead class="bg-emerald-100 text-emerald-800 text-left">
+                            <tr>
+                                <th class="px-3 py-1">Year</th>
+                                <th class="px-3 py-1 text-right">Total (kg)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="yield-history-body" class="divide-y divide-emerald-50">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="space-y-3">
                 <button onclick="openHarvest(document.getElementById('td-id').innerText)" class="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-md">Log Harvest</button>
                 <button onclick="openWorkOrder(document.getElementById('td-id').innerText)" class="w-full bg-orange-600 text-white py-4 rounded-xl font-bold shadow-md">New Work Order</button>
@@ -63,6 +91,11 @@
                 <input type="hidden" id="harvest-id-internal">
                 
                 <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Harvest Date</label>
+                    <input type="date" id="harvest_date" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 bg-gray-50">
+                </div>
+
+                <div>
                     <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Gross Weight (kg)</label>
                     <input type="number" step="0.01" id="gross_weight" placeholder="Total bucket weight" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
                 </div>
@@ -73,7 +106,7 @@
                 </div>
 
                 <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
-                    <p class="text-sm text-emerald-800 font-semibold">Live Calculation (Preview):</p>
+                    <p class="text-sm text-emerald-800 font-semibold">Live Net Weight Calculation:</p>
                     <p class="text-2xl font-bold text-emerald-900"><span id="net_weight_display">0.00</span> kg</p>
                 </div>
 
@@ -197,7 +230,7 @@
                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 clickable" onclick="viewTreeDetail('${tree.tree_id}')">
                     <h3 class="text-xl font-bold">${tree.tree_id}</h3>
                     <p class="text-xs text-emerald-600 font-bold uppercase mb-4">${tree.field_name || 'No Field'}</p>
-                    <button class="w-full bg-gray-50 text-gray-600 py-2 rounded-lg text-sm font-bold">View Actions</button>
+                    <button class="w-full bg-gray-50 text-gray-600 py-2 rounded-lg text-sm font-bold">View Actions & Stats</button>
                 </div>
             `).join('');
         }
@@ -212,42 +245,104 @@
             renderTrees(filtered);
         }
 
-        function viewTreeDetail(id) {
+        async function viewTreeDetail(id) {
             const tree = orchardData.find(t => t.tree_id === id);
             if (!tree) return;
+            
             document.getElementById('td-id').innerText = tree.tree_id;
             document.getElementById('td-field').innerText = tree.field_name || 'No Field Assigned';
             document.getElementById('td-variety').innerText = tree.variety || 'N/A';
+            
             if (tree.date_of_planting) {
                 const years = Math.abs(new Date(Date.now() - new Date(tree.date_of_planting).getTime()).getUTCFullYear() - 1970);
                 document.getElementById('td-age').innerText = years + " years";
-            } else { document.getElementById('td-age').innerText = "Unknown"; }
+            } else { 
+                document.getElementById('td-age').innerText = "Unknown"; 
+            }
+
+            // Fetch Yield History for this tree
+            await fetchYieldHistory(id);
+            
             showPage('tree-detail');
         }
 
-        // --- HARVEST SUBMISSION (FIXED FOR GENERATED COLUMN) ---
+        async function fetchYieldHistory(treeId) {
+            const tableBody = document.getElementById('yield-history-body');
+            const avgDisplay = document.getElementById('avg-yield');
+            const countDisplay = document.getElementById('total-count');
+            
+            tableBody.innerHTML = '<tr><td colspan="2" class="p-3 text-center text-xs text-gray-400">Loading history...</td></tr>';
+
+            const { data, error } = await _supabase
+                .from('harvest_logs')
+                .select('net_nut_weight_kg, created_at')
+                .eq('tree_id', treeId);
+
+            if (error || !data || data.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="2" class="p-3 text-center text-xs text-gray-400">No history found.</td></tr>';
+                avgDisplay.innerText = "0.00 kg";
+                countDisplay.innerText = "0";
+                return;
+            }
+
+            // Calculations
+            let totalWeight = 0;
+            const yearGroups = {};
+
+            data.forEach(log => {
+                const weight = log.net_nut_weight_kg || 0;
+                const year = new Date(log.created_at).getFullYear();
+                
+                totalWeight += weight;
+                yearGroups[year] = (yearGroups[year] || 0) + weight;
+            });
+
+            avgDisplay.innerText = (totalWeight / data.length).toFixed(2) + " kg";
+            countDisplay.innerText = data.length;
+
+            // Render Year Rows
+            const sortedYears = Object.keys(yearGroups).sort((a, b) => b - a);
+            tableBody.innerHTML = sortedYears.map(year => `
+                <tr>
+                    <td class="px-3 py-2 font-medium text-emerald-900">${year}</td>
+                    <td class="px-3 py-2 text-right font-bold text-gray-700">${yearGroups[year].toFixed(2)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function openHarvest(id) { 
+            document.getElementById('harvest-tree-id').innerText = id; 
+            document.getElementById('harvest-id-internal').value = id;
+            
+            // Set default date to today (local YYYY-MM-DD)
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('harvest_date').value = today;
+
+            showPage('log-harvest'); 
+        }
+
+        // --- HARVEST SUBMISSION ---
         document.getElementById('harvestForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('harvestSubmitBtn');
             const treeId = document.getElementById('harvest-id-internal').value;
             const gross = parseFloat(grossInput.value);
             const ratio = parseFloat(ratioInput.value);
+            const hDate = document.getElementById('harvest_date').value;
 
             btn.disabled = true;
-            btn.innerText = "Saving to Database...";
+            btn.innerText = "Saving...";
 
-            // NOTICE: We do NOT send net_nut_weight_kg. 
-            // Postgres calculates it automatically.
             const { error } = await _supabase.from('harvest_logs').insert([{
                 tree_id: treeId,
                 gross_weight_kg: gross,
                 leaf_to_nut_ratio: ratio,
                 notes: document.getElementById('harvest-notes').value,
-                created_at: new Date().toISOString() 
+                created_at: new Date(hDate).toISOString() // Use selected date
             }]);
 
             if (error) {
-                alert("Error saving harvest: " + error.message);
+                alert("Error: " + error.message);
                 btn.disabled = false;
                 btn.innerText = "Save Harvest";
             } else {
@@ -261,7 +356,7 @@
             }
         };
 
-        // --- WORK ORDER SUBMISSION (FIXED SCHEMA NAMES) ---
+        // --- WORK ORDER SUBMISSION ---
         document.getElementById('workForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('woSubmitBtn');
@@ -383,12 +478,6 @@
                 if (error) alert(error.message);
                 else { alert(`GPS updated for ${treeId}`); fetchTrees(); }
             }, (err) => alert(err.message), { enableHighAccuracy: true });
-        }
-
-        function openHarvest(id) { 
-            document.getElementById('harvest-tree-id').innerText = id; 
-            document.getElementById('harvest-id-internal').value = id; 
-            showPage('log-harvest'); 
         }
 
         function openWorkOrder(id) { 
