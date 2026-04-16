@@ -71,8 +71,7 @@
                                 <th class="px-3 py-1 text-right">Total (kg)</th>
                             </tr>
                         </thead>
-                        <tbody id="yield-history-body" class="divide-y divide-emerald-50">
-                            </tbody>
+                        <tbody id="yield-history-body" class="divide-y divide-emerald-50"></tbody>
                     </table>
                 </div>
             </div>
@@ -196,6 +195,26 @@
 
         let orchardData = [], workOrders = [], filteredWO = [], map, markers = [];
 
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function safeText(value, fallback = 'N/A') {
+            const text = value == null || value === '' ? fallback : String(value);
+            return escapeHtml(text);
+        }
+
+        function formatDisplayDate(value, fallback = 'No date') {
+            if (!value) return fallback;
+            const parsed = new Date(value);
+            return Number.isNaN(parsed.getTime()) ? fallback : parsed.toLocaleDateString();
+        }
+
         const grossInput = document.getElementById('gross_weight');
         const ratioInput = document.getElementById('leaf_ratio');
         const netDisplay = document.getElementById('net_weight_display');
@@ -224,28 +243,31 @@
 
         async function fetchTrees() {
             const { data, error } = await _supabase.from('trees').select('*').order('tree_id');
-            if (error) console.error("Error fetching trees:", error);
+            if (error) console.error('Error fetching trees:', error);
             orchardData = data || [];
             renderTrees(orchardData);
             if (map) updateMapMarkers();
         }
 
         function renderTrees(trees) {
-            document.getElementById('treeGrid').innerHTML = trees.map(tree => `
-                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 clickable" onclick="viewTreeDetail('${tree.tree_id}')">
-                    <h3 class="text-xl font-bold">${tree.tree_id}</h3>
-                    <p class="text-xs text-emerald-600 font-bold uppercase mb-4">${tree.field_name || 'No Field'}</p>
+            document.getElementById('treeGrid').innerHTML = trees.map(tree => {
+                const treeId = String(tree.tree_id ?? 'Unknown');
+                return `
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 clickable" onclick='viewTreeDetail(${JSON.stringify(treeId)})'>
+                    <h3 class="text-xl font-bold">${safeText(treeId, 'Unknown')}</h3>
+                    <p class="text-xs text-emerald-600 font-bold uppercase mb-4">${safeText(tree.field_name, 'No Field')}</p>
                     <button class="w-full bg-gray-50 text-gray-600 py-2 rounded-lg text-sm font-bold">View Actions & Stats</button>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         }
 
         function filterTrees() {
             const term = document.getElementById('treeSearch').value.toLowerCase();
-            const filtered = orchardData.filter(t => 
-                t.tree_id.toLowerCase().includes(term) || 
-                (t.field_name && t.field_name.toLowerCase().includes(term)) ||
-                (t.variety && t.variety.toLowerCase().includes(term))
+            const filtered = orchardData.filter(t =>
+                String(t.tree_id ?? '').toLowerCase().includes(term) ||
+                String(t.field_name ?? '').toLowerCase().includes(term) ||
+                String(t.variety ?? '').toLowerCase().includes(term)
             );
             renderTrees(filtered);
         }
@@ -260,14 +282,12 @@
             
             if (tree.date_of_planting) {
                 const years = Math.abs(new Date(Date.now() - new Date(tree.date_of_planting).getTime()).getUTCFullYear() - 1970);
-                document.getElementById('td-age').innerText = years + " years";
-            } else { 
-                document.getElementById('td-age').innerText = "Unknown"; 
+                document.getElementById('td-age').innerText = years + ' years';
+            } else {
+                document.getElementById('td-age').innerText = 'Unknown';
             }
 
-            // Fetch Yield History for this tree
             await fetchYieldHistory(id);
-            
             showPage('tree-detail');
         }
 
@@ -286,12 +306,11 @@
 
             if (error || !data || data.length === 0) {
                 tableBody.innerHTML = '<tr><td colspan="2" class="p-3 text-center text-xs text-gray-400">No history found.</td></tr>';
-                avgDisplay.innerText = "0.00 kg";
-                countDisplay.innerText = "0";
+                avgDisplay.innerText = '0.00 kg';
+                countDisplay.innerText = '0';
                 return;
             }
 
-            // Calculations
             let totalWeight = 0;
             const yearGroups = {};
 
@@ -304,30 +323,25 @@
                 yearGroups[year] = (yearGroups[year] || 0) + weight;
             });
 
-            avgDisplay.innerText = (totalWeight / data.length).toFixed(2) + " kg";
+            avgDisplay.innerText = (totalWeight / data.length).toFixed(2) + ' kg';
             countDisplay.innerText = data.length;
 
-            // Render Year Rows
-            const sortedYears = Object.keys(yearGroups).sort((a, b) => b - a);
+            const sortedYears = Object.keys(yearGroups).sort((a, b) => Number(b) - Number(a));
             tableBody.innerHTML = sortedYears.map(year => `
                 <tr>
-                    <td class="px-3 py-2 font-medium text-emerald-900">${year}</td>
+                    <td class="px-3 py-2 font-medium text-emerald-900">${safeText(year, 'Unknown')}</td>
                     <td class="px-3 py-2 text-right font-bold text-gray-700">${yearGroups[year].toFixed(2)}</td>
                 </tr>
             `).join('');
         }
 
-        function openHarvest(id) { 
-            document.getElementById('harvest-tree-id').innerText = id; 
+        function openHarvest(id) {
+            document.getElementById('harvest-tree-id').innerText = id;
             document.getElementById('harvest-id-internal').value = id;
-            
-            // Set default date to today using the user's local timezone.
             document.getElementById('harvest_date').value = getLocalDateInputValue();
-
-            showPage('log-harvest'); 
+            showPage('log-harvest');
         }
 
-        // --- HARVEST SUBMISSION ---
         document.getElementById('harvestForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('harvestSubmitBtn');
@@ -356,28 +370,27 @@
             }]);
 
             if (error) {
-                alert("Error: " + error.message);
+                alert('Error: ' + error.message);
                 btn.disabled = false;
-                btn.innerText = "Save Harvest";
+                btn.innerText = 'Save Harvest';
             } else {
                 alert(`Harvest logged for ${treeId}!`);
                 e.target.reset();
-                netDisplay.innerText = "0.00";
+                netDisplay.innerText = '0.00';
                 showPage('tree-list');
                 btn.disabled = false;
-                btn.innerText = "Save Harvest";
+                btn.innerText = 'Save Harvest';
                 fetchTrees();
             }
         };
 
-        // --- WORK ORDER SUBMISSION ---
         document.getElementById('workForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('woSubmitBtn');
             const treeId = document.getElementById('work-id-internal').value;
             
             btn.disabled = true;
-            btn.innerText = "Submitting...";
+            btn.innerText = 'Submitting...';
 
             const { error } = await _supabase.from('work_orders').insert([{
                 tree_id: treeId,
@@ -388,20 +401,21 @@
             }]);
 
             if (error) {
-                alert("Error: " + error.message);
+                alert('Error: ' + error.message);
                 btn.disabled = false;
-                btn.innerText = "Submit Work Order";
+                btn.innerText = 'Submit Work Order';
             } else {
-                alert("Work order created!");
+                alert('Work order created!');
                 e.target.reset();
                 showPage('tree-list');
                 btn.disabled = false;
-                btn.innerText = "Submit Work Order";
+                btn.innerText = 'Submit Work Order';
             }
         };
 
         async function fetchWorkOrders() {
-            const { data } = await _supabase.from('work_orders').select('*').order('created_at', { ascending: false });
+            const { data, error } = await _supabase.from('work_orders').select('*').order('created_at', { ascending: false });
+            if (error) console.error('Error fetching work orders:', error);
             workOrders = data || [];
             filteredWO = [...workOrders];
             renderWorkOrders();
@@ -409,58 +423,68 @@
 
         function renderWorkOrders() {
             const tbody = document.getElementById('woTableBody');
-            tbody.innerHTML = filteredWO.map(wo => `
-                <tr class="border-b clickable" onclick="viewWODetail('${wo.wo_id}')">
-                    <td class="p-4 font-bold">${wo.tree_id}</td>
-                    <td class="p-4">${wo.task_type}</td>
-                    <td class="p-4 text-xs font-semibold ${wo.status === 'closed' ? 'text-gray-400' : 'text-orange-600'}">${wo.status}</td>
-                    <td class="p-4 text-xs text-gray-400">${new Date(wo.created_at).toLocaleDateString()}</td>
+            tbody.innerHTML = filteredWO.map(wo => {
+                const treeId = String(wo.tree_id ?? 'Unassigned');
+                const taskType = String(wo.task_type ?? 'Unspecified');
+                const status = String(wo.status ?? 'unknown');
+                const createdAt = formatDisplayDate(wo.created_at);
+                return `
+                <tr class="border-b clickable" onclick='viewWODetail(${JSON.stringify(String(wo.wo_id ?? ''))})'>
+                    <td class="p-4 font-bold">${safeText(treeId, 'Unassigned')}</td>
+                    <td class="p-4">${safeText(taskType, 'Unspecified')}</td>
+                    <td class="p-4 text-xs font-semibold ${status === 'closed' ? 'text-gray-400' : 'text-orange-600'}">${safeText(status, 'unknown')}</td>
+                    <td class="p-4 text-xs text-gray-400">${safeText(createdAt, 'No date')}</td>
                 </tr>
-            `).join('');
+            `;
+            }).join('');
         }
 
         function filterWorkOrders() {
             const term = document.getElementById('woSearch').value.toLowerCase();
-            filteredWO = workOrders.filter(wo => 
-                wo.tree_id.toLowerCase().includes(term) || 
-                wo.task_type.toLowerCase().includes(term) || 
-                wo.status.toLowerCase().includes(term)
-            );
+            filteredWO = workOrders.filter(wo => {
+                const treeId = String(wo.tree_id ?? '').toLowerCase();
+                const taskType = String(wo.task_type ?? '').toLowerCase();
+                const status = String(wo.status ?? '').toLowerCase();
+                return treeId.includes(term) || taskType.includes(term) || status.includes(term);
+            });
             renderWorkOrders();
         }
 
         function viewWODetail(woId) {
-            const wo = workOrders.find(w => w.wo_id == woId);
+            const wo = workOrders.find(w => String(w.wo_id) === String(woId));
             if (!wo) return;
             document.getElementById('wod-id-internal').value = wo.wo_id;
-            document.getElementById('wod-tree').innerText = wo.tree_id;
-            document.getElementById('wod-type').innerText = wo.task_type;
-            document.getElementById('wod-status').innerText = wo.status;
-            document.getElementById('wod-instructions').innerText = wo.instructions || "No instructions provided.";
+            document.getElementById('wod-tree').innerText = wo.tree_id || 'Unassigned';
+            document.getElementById('wod-type').innerText = wo.task_type || 'Unspecified';
+            document.getElementById('wod-status').innerText = wo.status || 'unknown';
+            document.getElementById('wod-instructions').innerText = wo.instructions || 'No instructions provided.';
             
             const closeBtn = document.getElementById('close-wo-btn');
             const stamp = document.getElementById('closed-timestamp');
             if (wo.status === 'closed') {
                 closeBtn.classList.add('hidden');
-                document.getElementById('wod-status').className = "font-bold uppercase text-sm text-gray-400";
+                document.getElementById('wod-status').className = 'font-bold uppercase text-sm text-gray-400';
                 if (wo.closed_at) {
-                    stamp.innerText = "Closed on: " + new Date(wo.closed_at).toLocaleString();
+                    stamp.innerText = 'Closed on: ' + new Date(wo.closed_at).toLocaleString();
                     stamp.classList.remove('hidden');
                 }
             } else {
                 closeBtn.classList.remove('hidden');
                 stamp.classList.add('hidden');
-                document.getElementById('wod-status').className = "font-bold uppercase text-sm text-orange-600";
+                document.getElementById('wod-status').className = 'font-bold uppercase text-sm text-orange-600';
             }
             showPage('wo-detail');
         }
 
         async function handleCloseWorkOrder() {
             const woId = document.getElementById('wod-id-internal').value;
-            if (!confirm("Mark this as CLOSED?")) return;
+            if (!confirm('Mark this as CLOSED?')) return;
             const { error } = await _supabase.from('work_orders').update({ status: 'closed', closed_at: new Date().toISOString() }).eq('wo_id', woId);
-            if (error) alert("Error: " + error.message);
-            else { fetchWorkOrders(); showPage('work-order-list'); }
+            if (error) alert('Error: ' + error.message);
+            else {
+                await fetchWorkOrders();
+                showPage('work-order-list');
+            }
         }
 
         function initMap() {
@@ -472,7 +496,7 @@
 
         function updateMapMarkers() {
             markers.forEach(m => map.removeLayer(m));
-            markers = orchardData.filter(t => t.latitude).map(tree => {
+            markers = orchardData.filter(t => t.latitude != null && t.longitude != null).map(tree => {
                 const m = L.marker([tree.latitude, tree.longitude]).addTo(map);
                 m.on('click', () => viewTreeDetail(tree.tree_id));
                 return m;
@@ -482,7 +506,7 @@
         function toggleMapView() {
             const isActive = document.getElementById('map-view').classList.contains('active');
             showPage(isActive ? 'tree-list' : 'map-view');
-            document.getElementById('viewToggle').innerText = isActive ? "Map View" : "Grid View";
+            document.getElementById('viewToggle').innerText = isActive ? 'Map View' : 'Grid View';
             if (!isActive) initMap();
         }
 
@@ -490,20 +514,20 @@
             navigator.geolocation.getCurrentPosition(async (pos) => {
                 const { error } = await _supabase.from('trees').update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }).eq('tree_id', treeId);
                 if (error) alert(error.message);
-                else { alert(`GPS updated for ${treeId}`); fetchTrees(); }
+                else {
+                    alert(`GPS updated for ${treeId}`);
+                    fetchTrees();
+                }
             }, (err) => alert(err.message), { enableHighAccuracy: true });
         }
 
-        function openWorkOrder(id) { 
-            document.getElementById('work-tree-id').innerText = id; 
-            document.getElementById('work-id-internal').value = id; 
-            showPage('work-order'); 
+        function openWorkOrder(id) {
+            document.getElementById('work-tree-id').innerText = id;
+            document.getElementById('work-id-internal').value = id;
+            showPage('work-order');
         }
         
         fetchTrees();
     </script>
 </body>
 </html>
-
-
-
