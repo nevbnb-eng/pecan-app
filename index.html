@@ -40,6 +40,19 @@
 
         <section id="map-view" class="page">
             <div id="map" class="shadow-lg"></div>
+            <div id="location-confirm-panel" class="hidden mt-4 bg-white border border-emerald-200 rounded-2xl shadow-sm p-4 max-w-xl">
+                <h3 class="text-lg font-bold text-emerald-900">Confirm Tree Location</h3>
+                <p class="text-sm text-gray-600 mt-1">Review the proposed GPS point on the map before saving it to the tree record.</p>
+                <div class="mt-3 text-sm text-gray-700 space-y-1">
+                    <p>Tree: <span id="location-confirm-tree" class="font-semibold text-gray-900"></span></p>
+                    <p>Latitude: <span id="location-confirm-lat" class="font-mono text-gray-900"></span></p>
+                    <p>Longitude: <span id="location-confirm-lng" class="font-mono text-gray-900"></span></p>
+                </div>
+                <div class="mt-4 flex flex-wrap gap-3">
+                    <button onclick="confirmPendingLocationSave()" class="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold">Confirm Location</button>
+                    <button onclick="cancelPendingLocationSave()" class="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-bold">Cancel</button>
+                </div>
+            </div>
         </section>
 
         <section id="tree-detail" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
@@ -194,6 +207,7 @@
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         let orchardData = [], workOrders = [], filteredWO = [], map, markers = [];
+        let pendingLocationMarker = null, pendingLocation = null;
 
         function escapeHtml(value) {
             return String(value ?? '')
@@ -246,7 +260,10 @@
             if (error) console.error('Error fetching trees:', error);
             orchardData = data || [];
             renderTrees(orchardData);
-            if (map) updateMapMarkers();
+            if (map) {
+                updateMapMarkers();
+                fitMapToTreeBounds();
+            }
         }
 
         function renderTrees(trees) {
@@ -492,6 +509,7 @@
             map = L.map('map').setView([-27.65, 152.2], 18);
             L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains:['mt0','mt1','mt2','mt3'] }).addTo(map);
             updateMapMarkers();
+            fitMapToTreeBounds();
         }
 
         function updateMapMarkers() {
@@ -503,21 +521,93 @@
             });
         }
 
+        function getTreesWithCoordinates() {
+            return orchardData.filter(tree => tree.latitude != null && tree.longitude != null);
+        }
+
+        function fitMapToTreeBounds() {
+            if (!map) return;
+            const treesWithCoordinates = getTreesWithCoordinates();
+            if (treesWithCoordinates.length === 0) return;
+
+            if (treesWithCoordinates.length === 1) {
+                const onlyTree = treesWithCoordinates[0];
+                map.setView([onlyTree.latitude, onlyTree.longitude], 19);
+                return;
+            }
+
+            const bounds = L.latLngBounds(
+                treesWithCoordinates.map(tree => [Number(tree.latitude), Number(tree.longitude)])
+            );
+            map.fitBounds(bounds, { padding: [30, 30], maxZoom: 19 });
+        }
+
+        function showPendingLocationPreview(treeId, latitude, longitude) {
+            if (!map) initMap();
+
+            pendingLocation = { treeId, latitude, longitude };
+
+            if (pendingLocationMarker) {
+                map.removeLayer(pendingLocationMarker);
+            }
+
+            pendingLocationMarker = L.marker([latitude, longitude]).addTo(map);
+            pendingLocationMarker.bindPopup(`Proposed location for ${escapeHtml(treeId)}`).openPopup();
+            map.setView([latitude, longitude], 20);
+
+            document.getElementById('location-confirm-tree').innerText = treeId;
+            document.getElementById('location-confirm-lat').innerText = Number(latitude).toFixed(7);
+            document.getElementById('location-confirm-lng').innerText = Number(longitude).toFixed(7);
+            document.getElementById('location-confirm-panel').classList.remove('hidden');
+            showPage('map-view');
+        }
+
+        function clearPendingLocationPreview() {
+            if (map && pendingLocationMarker) {
+                map.removeLayer(pendingLocationMarker);
+            }
+            pendingLocationMarker = null;
+            pendingLocation = null;
+            document.getElementById('location-confirm-panel').classList.add('hidden');
+        }
+
+        async function confirmPendingLocationSave() {
+            if (!pendingLocation) return;
+
+            const { treeId, latitude, longitude } = pendingLocation;
+            const { error } = await _supabase
+                .from('trees')
+                .update({ latitude, longitude })
+                .eq('tree_id', treeId);
+
+            if (error) {
+                alert(error.message);
+                return;
+            }
+
+            clearPendingLocationPreview();
+            alert(`GPS updated for ${treeId}`);
+            await fetchTrees();
+        }
+
+        function cancelPendingLocationSave() {
+            clearPendingLocationPreview();
+            fitMapToTreeBounds();
+        }
+
         function toggleMapView() {
             const isActive = document.getElementById('map-view').classList.contains('active');
             showPage(isActive ? 'tree-list' : 'map-view');
             document.getElementById('viewToggle').innerText = isActive ? 'Map View' : 'Grid View';
-            if (!isActive) initMap();
+            if (!isActive) {
+                initMap();
+                fitMapToTreeBounds();
+            }
         }
 
         async function updateTreeLocation(treeId) {
             navigator.geolocation.getCurrentPosition(async (pos) => {
-                const { error } = await _supabase.from('trees').update({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }).eq('tree_id', treeId);
-                if (error) alert(error.message);
-                else {
-                    alert(`GPS updated for ${treeId}`);
-                    fetchTrees();
-                }
+                showPendingLocationPreview(treeId, pos.coords.latitude, pos.coords.longitude);
             }, (err) => alert(err.message), { enableHighAccuracy: true });
         }
 
