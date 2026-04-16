@@ -217,6 +217,11 @@
             window.scrollTo(0,0);
         }
 
+        function getLocalDateInputValue(date = new Date()) {
+            const timezoneOffsetMs = date.getTimezoneOffset() * 60000;
+            return new Date(date.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
+        }
+
         async function fetchTrees() {
             const { data, error } = await _supabase.from('trees').select('*').order('tree_id');
             if (error) console.error("Error fetching trees:", error);
@@ -275,8 +280,9 @@
 
             const { data, error } = await _supabase
                 .from('harvest_logs')
-                .select('net_nut_weight_kg, created_at')
-                .eq('tree_id', treeId);
+                .select('net_nut_weight_kg, harvest_date, created_at')
+                .eq('tree_id', treeId)
+                .order('harvest_date', { ascending: false });
 
             if (error || !data || data.length === 0) {
                 tableBody.innerHTML = '<tr><td colspan="2" class="p-3 text-center text-xs text-gray-400">No history found.</td></tr>';
@@ -290,9 +296,10 @@
             const yearGroups = {};
 
             data.forEach(log => {
-                const weight = log.net_nut_weight_kg || 0;
-                const year = new Date(log.created_at).getFullYear();
-                
+                const weight = Number(log.net_nut_weight_kg) || 0;
+                const sourceDate = log.harvest_date || log.created_at;
+                const year = sourceDate ? new Date(sourceDate).getFullYear() : 'Unknown';
+
                 totalWeight += weight;
                 yearGroups[year] = (yearGroups[year] || 0) + weight;
             });
@@ -314,9 +321,8 @@
             document.getElementById('harvest-tree-id').innerText = id; 
             document.getElementById('harvest-id-internal').value = id;
             
-            // Set default date to today (local YYYY-MM-DD)
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('harvest_date').value = today;
+            // Set default date to today using the user's local timezone.
+            document.getElementById('harvest_date').value = getLocalDateInputValue();
 
             showPage('log-harvest'); 
         }
@@ -329,16 +335,24 @@
             const gross = parseFloat(grossInput.value);
             const ratio = parseFloat(ratioInput.value);
             const hDate = document.getElementById('harvest_date').value;
+            const netWeight = gross * (1 - ratio);
+
+            if (!hDate) {
+                alert('Please choose a harvest date.');
+                return;
+            }
 
             btn.disabled = true;
-            btn.innerText = "Saving...";
+            btn.innerText = 'Saving...';
 
             const { error } = await _supabase.from('harvest_logs').insert([{
                 tree_id: treeId,
+                harvest_date: hDate,
                 gross_weight_kg: gross,
                 leaf_to_nut_ratio: ratio,
+                net_nut_weight_kg: Number(netWeight.toFixed(2)),
                 notes: document.getElementById('harvest-notes').value,
-                created_at: new Date(hDate).toISOString() // Use selected date
+                created_at: new Date().toISOString()
             }]);
 
             if (error) {
@@ -490,3 +504,6 @@
     </script>
 </body>
 </html>
+
+
+
