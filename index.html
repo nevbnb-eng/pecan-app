@@ -25,6 +25,7 @@
             <nav class="flex gap-4 overflow-x-auto pb-2">
                 <button onclick="toggleMapView()" id="viewToggle" class="bg-emerald-700 px-4 py-2 rounded-lg text-sm font-bold shrink-0">Map View</button>
                 <button onclick="showPage('tree-list')" class="hover:underline shrink-0">Trees</button>
+                <button onclick="fetchFertigationLogs(); showPage('fertigation-list')" class="hover:underline shrink-0">Fertigation</button>
                 <button onclick="fetchWorkOrders(); showPage('work-order-list')" class="hover:underline shrink-0">Work Orders</button>
             </nav>
         </div>
@@ -200,6 +201,88 @@
             </div>
         </section>
 
+        <section id="fertigation-list" class="page">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-emerald-900">Fertigation & Fertiliser Logs</h2>
+                    <p class="text-sm text-gray-500">Track applications by field or irrigation zone.</p>
+                </div>
+                <button onclick="openFertigationForm()" class="bg-emerald-700 text-white px-4 py-3 rounded-xl font-bold shadow-sm">Log Application</button>
+            </div>
+            <div class="mb-6">
+                <input type="text" id="fertigationSearch" oninput="filterFertigationLogs()" placeholder="Filter by field, zone, product, or type..." class="w-full p-4 rounded-xl border border-gray-300 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500">
+            </div>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50 border-b">
+                        <tr>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Date</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Target</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Product</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Amount</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Type</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fertigationTableBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="fertigation-form" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
+            <h2 class="text-xl font-bold mb-4 text-emerald-800">Log Fertigation / Fertiliser</h2>
+            <form id="fertigationForm" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Application Date</label>
+                    <input type="date" id="fertigation_date" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 bg-gray-50">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Target Type</label>
+                    <select id="fertigation_target_type" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white">
+                        <option value="field">Field</option>
+                        <option value="irrigation_zone">Irrigation Zone</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Field / Zone Name</label>
+                    <input type="text" id="fertigation_target_name" required placeholder="e.g. North Block or Zone A" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Application Type</label>
+                    <select id="fertigation_application_type" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white">
+                        <option value="fertigation">Fertigation</option>
+                        <option value="fertiliser">Fertiliser</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Product Name</label>
+                    <input type="text" id="fertigation_product_name" required placeholder="e.g. Urea or Trace Mix" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Amount</label>
+                        <input type="number" step="0.01" id="fertigation_amount" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Unit</label>
+                        <input type="text" id="fertigation_unit" required placeholder="kg, L, t" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Notes (Optional)</label>
+                    <textarea id="fertigation_notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500" rows="3" placeholder="Blend details, conditions, operator notes..."></textarea>
+                </div>
+
+                <button type="submit" id="fertigationSubmitBtn" class="w-full bg-emerald-700 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-emerald-800">Save Application</button>
+                <button type="button" onclick="showPage('fertigation-list')" class="w-full text-gray-500 mt-2">Cancel</button>
+            </form>
+        </section>
+
         <section id="wo-detail" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
             <h2 class="text-2xl font-bold text-orange-900 mb-2">Work Order Detail</h2>
             <input type="hidden" id="wod-id-internal">
@@ -257,7 +340,7 @@
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0cWVuYmZ4enlocGNwdWRtbHFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1ODI3MDAsImV4cCI6MjA4NzE1ODcwMH0.5MR78dPRGKbshbHmY1CuAFpS4FMtGtY44IROA-O609c';
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        let orchardData = [], workOrders = [], filteredWO = [], map, markers = [];
+        let orchardData = [], workOrders = [], filteredWO = [], fertigationLogs = [], filteredFertigationLogs = [], map, markers = [];
         let harvestedThisYear = new Set(), prunedThisYear = new Set(), activeHarvestFilter = 'all', activePruningFilter = 'all';
         let pendingLocationMarker = null, pendingLocation = null;
 
@@ -323,6 +406,12 @@
             return new Date(date.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
         }
 
+        function formatTargetType(targetType) {
+            if (targetType === 'irrigation_zone') return 'Irrigation Zone';
+            if (targetType === 'field') return 'Field';
+            return targetType || 'Unknown';
+        }
+
         async function fetchTrees() {
             const { data, error } = await _supabase.from('trees').select('*').order('tree_id');
             if (error) console.error('Error fetching trees:', error);
@@ -334,6 +423,26 @@
                 updateMapMarkers();
                 fitMapToTreeBounds();
             }
+        }
+
+        async function fetchFertigationLogs() {
+            const { data, error } = await _supabase
+                .from('fertigation_logs')
+                .select('*')
+                .order('application_date', { ascending: false })
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error('Error fetching fertigation logs:', error);
+                fertigationLogs = [];
+                filteredFertigationLogs = [];
+                renderFertigationLogs();
+                return;
+            }
+
+            fertigationLogs = data || [];
+            filteredFertigationLogs = [...fertigationLogs];
+            renderFertigationLogs();
         }
 
         async function fetchHarvestStatusThisYear() {
@@ -481,6 +590,46 @@
                     ? 'bg-slate-100 text-slate-700 border border-slate-200 px-4 py-2 rounded-full text-sm font-bold'
                     : 'bg-white text-slate-700 border border-slate-200 px-4 py-2 rounded-full text-sm font-bold';
             filterTrees();
+        }
+
+        function openFertigationForm() {
+            document.getElementById('fertigation_date').value = getLocalDateInputValue();
+            showPage('fertigation-form');
+        }
+
+        function renderFertigationLogs() {
+            const tbody = document.getElementById('fertigationTableBody');
+            if (!filteredFertigationLogs.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-sm text-gray-400">No fertigation or fertiliser logs found.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filteredFertigationLogs.map(log => `
+                <tr class="border-b">
+                    <td class="p-4 text-sm text-gray-700">${safeText(formatDisplayDate(log.application_date), 'No date')}</td>
+                    <td class="p-4">
+                        <p class="font-semibold text-gray-900">${safeText(log.target_name, 'Unknown target')}</p>
+                        <p class="text-xs text-gray-500 uppercase">${safeText(formatTargetType(log.target_type), 'Unknown')}</p>
+                    </td>
+                    <td class="p-4">
+                        <p class="font-semibold text-gray-900">${safeText(log.product_name, 'Unknown product')}</p>
+                        <p class="text-xs text-gray-500 uppercase">${safeText(log.application_type, 'Unknown')}</p>
+                    </td>
+                    <td class="p-4 text-sm text-gray-700">${safeText(`${Number(log.amount || 0).toFixed(2)} ${log.unit || ''}`.trim(), 'No amount')}</td>
+                    <td class="p-4 text-sm text-gray-700">${safeText(log.application_type, 'Unknown')}</td>
+                </tr>
+            `).join('');
+        }
+
+        function filterFertigationLogs() {
+            const term = document.getElementById('fertigationSearch').value.toLowerCase();
+            filteredFertigationLogs = fertigationLogs.filter(log =>
+                String(log.target_name ?? '').toLowerCase().includes(term) ||
+                String(log.target_type ?? '').toLowerCase().includes(term) ||
+                String(log.product_name ?? '').toLowerCase().includes(term) ||
+                String(log.application_type ?? '').toLowerCase().includes(term)
+            );
+            renderFertigationLogs();
         }
 
         async function viewTreeDetail(id) {
@@ -634,6 +783,41 @@
                 btn.innerText = 'Save Pruning Event';
                 showPage('tree-list');
                 fetchTrees();
+            }
+        };
+
+        document.getElementById('fertigationForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('fertigationSubmitBtn');
+
+            btn.disabled = true;
+            btn.innerText = 'Saving...';
+
+            const payload = {
+                application_date: document.getElementById('fertigation_date').value,
+                target_type: document.getElementById('fertigation_target_type').value,
+                target_name: document.getElementById('fertigation_target_name').value.trim(),
+                application_type: document.getElementById('fertigation_application_type').value,
+                product_name: document.getElementById('fertigation_product_name').value.trim(),
+                amount: parseFloat(document.getElementById('fertigation_amount').value),
+                unit: document.getElementById('fertigation_unit').value.trim(),
+                notes: document.getElementById('fertigation_notes').value.trim(),
+                created_at: new Date().toISOString()
+            };
+
+            const { error } = await _supabase.from('fertigation_logs').insert([payload]);
+
+            if (error) {
+                alert('Error: ' + error.message);
+                btn.disabled = false;
+                btn.innerText = 'Save Application';
+            } else {
+                alert('Application logged!');
+                e.target.reset();
+                btn.disabled = false;
+                btn.innerText = 'Save Application';
+                await fetchFertigationLogs();
+                showPage('fertigation-list');
             }
         };
 
