@@ -35,11 +35,27 @@
             <div class="mb-6">
                 <input type="text" id="treeSearch" oninput="filterTrees()" placeholder="Search by ID, Field, or Variety..." class="w-full p-4 rounded-xl border border-gray-300 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500">
             </div>
+            <div class="mb-6 flex flex-wrap items-center gap-3">
+                <button onclick="setHarvestFilter('all')" id="harvest-filter-all" class="bg-emerald-700 text-white px-4 py-2 rounded-full text-sm font-bold">All Trees</button>
+                <button onclick="setHarvestFilter('harvested')" id="harvest-filter-harvested" class="bg-white text-emerald-800 border border-emerald-200 px-4 py-2 rounded-full text-sm font-bold">Harvested This Year</button>
+                <button onclick="setHarvestFilter('pending')" id="harvest-filter-pending" class="bg-white text-amber-800 border border-amber-200 px-4 py-2 rounded-full text-sm font-bold">Not Harvested This Year</button>
+                <p id="harvest-filter-summary" class="text-sm text-gray-500"></p>
+            </div>
             <div id="treeGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
         </section>
 
         <section id="map-view" class="page">
             <div id="map" class="shadow-lg"></div>
+            <div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-600">
+                <div class="flex items-center gap-2">
+                    <span class="inline-block w-3 h-3 rounded-full bg-emerald-600"></span>
+                    <span>Harvested this year</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="inline-block w-3 h-3 rounded-full bg-amber-500"></span>
+                    <span>Not harvested this year</span>
+                </div>
+            </div>
             <div id="location-confirm-panel" class="hidden mt-4 bg-white border border-emerald-200 rounded-2xl shadow-sm p-4 max-w-xl">
                 <h3 class="text-lg font-bold text-emerald-900">Confirm Tree Location</h3>
                 <p class="text-sm text-gray-600 mt-1">Review the proposed GPS point on the map before saving it to the tree record.</p>
@@ -207,6 +223,7 @@
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         let orchardData = [], workOrders = [], filteredWO = [], map, markers = [];
+        let harvestedThisYear = new Set(), activeHarvestFilter = 'all';
         let pendingLocationMarker = null, pendingLocation = null;
 
         function escapeHtml(value) {
@@ -227,6 +244,15 @@
             if (!value) return fallback;
             const parsed = new Date(value);
             return Number.isNaN(parsed.getTime()) ? fallback : parsed.toLocaleDateString();
+        }
+
+        function getCurrentYearRange() {
+            const currentYear = new Date().getFullYear();
+            return {
+                start: `${currentYear}-01-01`,
+                end: `${currentYear}-12-31`,
+                label: currentYear
+            };
         }
 
         const grossInput = document.getElementById('gross_weight');
@@ -259,20 +285,53 @@
             const { data, error } = await _supabase.from('trees').select('*').order('tree_id');
             if (error) console.error('Error fetching trees:', error);
             orchardData = data || [];
-            renderTrees(orchardData);
+            await fetchHarvestStatusThisYear();
+            filterTrees();
             if (map) {
                 updateMapMarkers();
                 fitMapToTreeBounds();
             }
         }
 
+        async function fetchHarvestStatusThisYear() {
+            const { label } = getCurrentYearRange();
+            const { data, error } = await _supabase
+                .from('harvest_logs')
+                .select('tree_id, harvest_date, created_at');
+
+            if (error) {
+                console.error('Error fetching harvest status:', error);
+                harvestedThisYear = new Set();
+                return;
+            }
+
+            harvestedThisYear = new Set(
+                (data || [])
+                    .filter(log => {
+                        const sourceDate = log.harvest_date || log.created_at;
+                        return sourceDate && new Date(sourceDate).getFullYear() === label;
+                    })
+                    .map(log => log.tree_id)
+                    .filter(Boolean)
+            );
+        }
+
         function renderTrees(trees) {
+            const { label } = getCurrentYearRange();
             document.getElementById('treeGrid').innerHTML = trees.map(tree => {
                 const treeId = String(tree.tree_id ?? 'Unknown');
+                const isHarvested = harvestedThisYear.has(treeId);
                 return `
                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 clickable" onclick='viewTreeDetail(${JSON.stringify(treeId)})'>
-                    <h3 class="text-xl font-bold">${safeText(treeId, 'Unknown')}</h3>
-                    <p class="text-xs text-emerald-600 font-bold uppercase mb-4">${safeText(tree.field_name, 'No Field')}</p>
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <h3 class="text-xl font-bold">${safeText(treeId, 'Unknown')}</h3>
+                            <p class="text-xs text-emerald-600 font-bold uppercase mt-1">${safeText(tree.field_name, 'No Field')}</p>
+                        </div>
+                        <span class="text-xs font-bold px-3 py-1 rounded-full ${isHarvested ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">
+                            ${isHarvested ? `Harvested ${label}` : `Pending ${label}`}
+                        </span>
+                    </div>
                     <button class="w-full bg-gray-50 text-gray-600 py-2 rounded-lg text-sm font-bold">View Actions & Stats</button>
                 </div>
             `;
@@ -281,12 +340,46 @@
 
         function filterTrees() {
             const term = document.getElementById('treeSearch').value.toLowerCase();
-            const filtered = orchardData.filter(t =>
-                String(t.tree_id ?? '').toLowerCase().includes(term) ||
-                String(t.field_name ?? '').toLowerCase().includes(term) ||
-                String(t.variety ?? '').toLowerCase().includes(term)
-            );
+            const filtered = orchardData.filter(t => {
+                const matchesSearch =
+                    String(t.tree_id ?? '').toLowerCase().includes(term) ||
+                    String(t.field_name ?? '').toLowerCase().includes(term) ||
+                    String(t.variety ?? '').toLowerCase().includes(term);
+
+                if (!matchesSearch) return false;
+
+                const isHarvested = harvestedThisYear.has(String(t.tree_id ?? ''));
+                if (activeHarvestFilter === 'harvested') return isHarvested;
+                if (activeHarvestFilter === 'pending') return !isHarvested;
+                return true;
+            });
             renderTrees(filtered);
+            updateHarvestFilterSummary(filtered.length);
+        }
+
+        function updateHarvestFilterSummary(visibleCount) {
+            const { label } = getCurrentYearRange();
+            const harvestedCount = orchardData.filter(tree => harvestedThisYear.has(String(tree.tree_id ?? ''))).length;
+            const pendingCount = orchardData.length - harvestedCount;
+            document.getElementById('harvest-filter-summary').innerText =
+                `${label}: ${harvestedCount} harvested, ${pendingCount} pending, ${visibleCount} shown`;
+        }
+
+        function setHarvestFilter(filterName) {
+            activeHarvestFilter = filterName;
+            document.getElementById('harvest-filter-all').className =
+                filterName === 'all'
+                    ? 'bg-emerald-700 text-white px-4 py-2 rounded-full text-sm font-bold'
+                    : 'bg-white text-emerald-800 border border-emerald-200 px-4 py-2 rounded-full text-sm font-bold';
+            document.getElementById('harvest-filter-harvested').className =
+                filterName === 'harvested'
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 px-4 py-2 rounded-full text-sm font-bold'
+                    : 'bg-white text-emerald-800 border border-emerald-200 px-4 py-2 rounded-full text-sm font-bold';
+            document.getElementById('harvest-filter-pending').className =
+                filterName === 'pending'
+                    ? 'bg-amber-100 text-amber-800 border border-amber-200 px-4 py-2 rounded-full text-sm font-bold'
+                    : 'bg-white text-amber-800 border border-amber-200 px-4 py-2 rounded-full text-sm font-bold';
+            filterTrees();
         }
 
         async function viewTreeDetail(id) {
@@ -515,7 +608,25 @@
         function updateMapMarkers() {
             markers.forEach(m => map.removeLayer(m));
             markers = orchardData.filter(t => t.latitude != null && t.longitude != null).map(tree => {
-                const m = L.marker([tree.latitude, tree.longitude]).addTo(map);
+                const treeId = String(tree.tree_id ?? '');
+                const isHarvested = harvestedThisYear.has(treeId);
+                const markerHtml = `
+                    <div style="
+                        width: 18px;
+                        height: 18px;
+                        border-radius: 9999px;
+                        background: ${isHarvested ? '#059669' : '#f59e0b'};
+                        border: 3px solid white;
+                        box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.2);
+                    "></div>
+                `;
+                const icon = L.divIcon({
+                    className: 'custom-tree-marker',
+                    html: markerHtml,
+                    iconSize: [18, 18],
+                    iconAnchor: [9, 9]
+                });
+                const m = L.marker([tree.latitude, tree.longitude], { icon }).addTo(map);
                 m.on('click', () => viewTreeDetail(tree.tree_id));
                 return m;
             });
