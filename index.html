@@ -72,7 +72,7 @@
             </div>
             <div id="location-confirm-panel" class="hidden mt-4 bg-white border border-emerald-200 rounded-2xl shadow-sm p-4 max-w-xl">
                 <h3 class="text-lg font-bold text-emerald-900">Confirm Tree Location</h3>
-                <p class="text-sm text-gray-600 mt-1">Review the proposed GPS point on the map before saving it to the tree record.</p>
+                <p class="text-sm text-gray-600 mt-1">Review the proposed GPS point on the map before saving it to the tree record. You can drag the marker to fine-tune the position.</p>
                 <div class="mt-3 text-sm text-gray-700 space-y-1">
                     <p>Tree: <span id="location-confirm-tree" class="font-semibold text-gray-900"></span></p>
                     <p>Latitude: <span id="location-confirm-lat" class="font-mono text-gray-900"></span></p>
@@ -279,6 +279,12 @@
             if (!value) return fallback;
             const parsed = new Date(value);
             return Number.isNaN(parsed.getTime()) ? fallback : parsed.toLocaleDateString();
+        }
+
+        function updatePendingLocationPanel(treeId, latitude, longitude) {
+            document.getElementById('location-confirm-tree').innerText = treeId;
+            document.getElementById('location-confirm-lat').innerText = Number(latitude).toFixed(7);
+            document.getElementById('location-confirm-lng').innerText = Number(longitude).toFixed(7);
         }
 
         function getCurrentYearRange() {
@@ -800,13 +806,18 @@
                 map.removeLayer(pendingLocationMarker);
             }
 
-            pendingLocationMarker = L.marker([latitude, longitude]).addTo(map);
+            pendingLocationMarker = L.marker([latitude, longitude], { draggable: true }).addTo(map);
             pendingLocationMarker.bindPopup(`Proposed location for ${escapeHtml(treeId)}`).openPopup();
+            pendingLocationMarker.on('dragend', () => {
+                const position = pendingLocationMarker.getLatLng();
+                pendingLocation.latitude = position.lat;
+                pendingLocation.longitude = position.lng;
+                updatePendingLocationPanel(treeId, position.lat, position.lng);
+                pendingLocationMarker.openPopup();
+            });
             map.setView([latitude, longitude], 20);
 
-            document.getElementById('location-confirm-tree').innerText = treeId;
-            document.getElementById('location-confirm-lat').innerText = Number(latitude).toFixed(7);
-            document.getElementById('location-confirm-lng').innerText = Number(longitude).toFixed(7);
+            updatePendingLocationPanel(treeId, latitude, longitude);
             document.getElementById('location-confirm-panel').classList.remove('hidden');
             showPage('map-view');
         }
