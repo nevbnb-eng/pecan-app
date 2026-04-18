@@ -26,6 +26,7 @@
                 <button onclick="toggleMapView()" id="viewToggle" class="bg-emerald-700 px-4 py-2 rounded-lg text-sm font-bold shrink-0">Map View</button>
                 <button onclick="showPage('tree-list')" class="hover:underline shrink-0">Trees</button>
                 <button onclick="fetchFertigationLogs(); showPage('fertigation-list')" class="hover:underline shrink-0">Fertigation</button>
+                <button onclick="fetchActivitySessions(); showPage('session-list')" class="hover:underline shrink-0">Sessions</button>
                 <button onclick="fetchWorkOrders(); showPage('work-order-list')" class="hover:underline shrink-0">Work Orders</button>
             </nav>
         </div>
@@ -123,6 +124,8 @@
             <div class="space-y-3">
                 <button onclick="openHarvest(document.getElementById('td-id').innerText)" class="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-md">Log Harvest</button>
                 <button onclick="openPruning(document.getElementById('td-id').innerText)" class="w-full bg-sky-700 text-white py-4 rounded-xl font-bold shadow-md">Log Pruning</button>
+                <button onclick="openSessionForm('harvesting')" class="w-full bg-emerald-800 text-white py-3 rounded-xl font-bold shadow-md">Start Harvest Session</button>
+                <button onclick="openSessionForm('pruning')" class="w-full bg-sky-800 text-white py-3 rounded-xl font-bold shadow-md">Start Pruning Session</button>
                 <button onclick="openWorkOrder(document.getElementById('td-id').innerText)" class="w-full bg-orange-600 text-white py-4 rounded-xl font-bold shadow-md">New Work Order</button>
                 <button onclick="updateTreeLocation(document.getElementById('td-id').innerText)" class="w-full border-2 border-emerald-800 text-emerald-800 py-3 rounded-xl font-bold">Update GPS Location</button>
                 <button onclick="showPage('tree-list')" class="w-full text-gray-400 py-2">Back to List</button>
@@ -246,7 +249,8 @@
 
                 <div>
                     <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Field / Zone Name</label>
-                    <input type="text" id="fertigation_target_name" required placeholder="e.g. North Block or Zone A" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                    <input type="text" id="fertigation_target_name" list="fertigation-target-suggestions" required placeholder="e.g. North Block or Zone A" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                    <datalist id="fertigation-target-suggestions"></datalist>
                 </div>
 
                 <div>
@@ -259,7 +263,8 @@
 
                 <div>
                     <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Product Name</label>
-                    <input type="text" id="fertigation_product_name" required placeholder="e.g. Urea or Trace Mix" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                    <input type="text" id="fertigation_product_name" list="fertigation-product-suggestions" required placeholder="e.g. Urea or Trace Mix" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                    <datalist id="fertigation-product-suggestions"></datalist>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
@@ -280,6 +285,55 @@
 
                 <button type="submit" id="fertigationSubmitBtn" class="w-full bg-emerald-700 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-emerald-800">Save Application</button>
                 <button type="button" onclick="showPage('fertigation-list')" class="w-full text-gray-500 mt-2">Cancel</button>
+            </form>
+        </section>
+
+        <section id="session-list" class="page">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-emerald-900">Activity Sessions</h2>
+                    <p class="text-sm text-gray-500">Start and end sessions manually. Harvest and pruning logs will attach automatically to any active matching session.</p>
+                </div>
+                <button onclick="openSessionForm()" class="bg-emerald-800 text-white px-4 py-3 rounded-xl font-bold shadow-sm">Start Session</button>
+            </div>
+            <div class="mb-6">
+                <input type="text" id="sessionSearch" oninput="filterActivitySessions()" placeholder="Filter by activity, notes, or status..." class="w-full p-4 rounded-xl border border-gray-300 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500">
+            </div>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50 border-b">
+                        <tr>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Activity</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Started</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Duration</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Notes</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Status</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessionTableBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="session-form" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
+            <h2 class="text-xl font-bold mb-4 text-emerald-800">Start Activity Session</h2>
+            <form id="sessionForm" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Activity Type</label>
+                    <select id="session_activity_type" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white">
+                        <option value="harvesting">Harvesting</option>
+                        <option value="pruning">Pruning</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Notes (Optional)</label>
+                    <textarea id="session_notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500" rows="3" placeholder="Crew, weather, shift notes..."></textarea>
+                </div>
+
+                <button type="submit" id="sessionSubmitBtn" class="w-full bg-emerald-800 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-emerald-900">Start Session</button>
+                <button type="button" onclick="showPage('session-list')" class="w-full text-gray-500 mt-2">Cancel</button>
             </form>
         </section>
 
@@ -340,7 +394,7 @@
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0cWVuYmZ4enlocGNwdWRtbHFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1ODI3MDAsImV4cCI6MjA4NzE1ODcwMH0.5MR78dPRGKbshbHmY1CuAFpS4FMtGtY44IROA-O609c';
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        let orchardData = [], workOrders = [], filteredWO = [], fertigationLogs = [], filteredFertigationLogs = [], map, markers = [];
+        let orchardData = [], workOrders = [], filteredWO = [], fertigationLogs = [], filteredFertigationLogs = [], activitySessions = [], filteredActivitySessions = [], map, markers = [];
         let harvestedThisYear = new Set(), prunedThisYear = new Set(), activeHarvestFilter = 'all', activePruningFilter = 'all';
         let pendingLocationMarker = null, pendingLocation = null;
 
@@ -406,10 +460,19 @@
             return new Date(date.getTime() - timezoneOffsetMs).toISOString().split('T')[0];
         }
 
-        function formatTargetType(targetType) {
-            if (targetType === 'irrigation_zone') return 'Irrigation Zone';
-            if (targetType === 'field') return 'Field';
-            return targetType || 'Unknown';
+        function formatActivityType(activityType) {
+            if (activityType === 'harvesting') return 'Harvesting';
+            if (activityType === 'pruning') return 'Pruning';
+            return activityType || 'Unknown';
+        }
+
+        function formatDurationMinutes(totalMinutes) {
+            if (totalMinutes == null || Number.isNaN(Number(totalMinutes))) return 'In progress';
+            const minutes = Math.max(0, Math.round(Number(totalMinutes)));
+            const hours = Math.floor(minutes / 60);
+            const remainder = minutes % 60;
+            if (hours === 0) return `${remainder} min`;
+            return `${hours}h ${remainder}m`;
         }
 
         async function fetchTrees() {
@@ -442,7 +505,27 @@
 
             fertigationLogs = data || [];
             filteredFertigationLogs = [...fertigationLogs];
+            updateFertigationSuggestions();
             renderFertigationLogs();
+        }
+
+        async function fetchActivitySessions() {
+            const { data, error } = await _supabase
+                .from('activity_sessions')
+                .select('*')
+                .order('started_at', { ascending: false });
+
+            if (error) {
+                console.error('Error fetching activity sessions:', error);
+                activitySessions = [];
+                filteredActivitySessions = [];
+                renderActivitySessions();
+                return;
+            }
+
+            activitySessions = data || [];
+            filteredActivitySessions = [...activitySessions];
+            renderActivitySessions();
         }
 
         async function fetchHarvestStatusThisYear() {
@@ -597,6 +680,18 @@
             showPage('fertigation-form');
         }
 
+        function updateFertigationSuggestions() {
+            const targetSuggestions = [...new Set(fertigationLogs.map(log => String(log.target_name ?? '').trim()).filter(Boolean))].sort();
+            const productSuggestions = [...new Set(fertigationLogs.map(log => String(log.product_name ?? '').trim()).filter(Boolean))].sort();
+
+            document.getElementById('fertigation-target-suggestions').innerHTML = targetSuggestions
+                .map(name => `<option value="${safeText(name, '')}"></option>`)
+                .join('');
+            document.getElementById('fertigation-product-suggestions').innerHTML = productSuggestions
+                .map(name => `<option value="${safeText(name, '')}"></option>`)
+                .join('');
+        }
+
         function renderFertigationLogs() {
             const tbody = document.getElementById('fertigationTableBody');
             if (!filteredFertigationLogs.length) {
@@ -630,6 +725,67 @@
                 String(log.application_type ?? '').toLowerCase().includes(term)
             );
             renderFertigationLogs();
+        }
+
+        function openSessionForm(activityType = 'harvesting') {
+            document.getElementById('session_activity_type').value = activityType;
+            showPage('session-form');
+        }
+
+        function renderActivitySessions() {
+            const tbody = document.getElementById('sessionTableBody');
+            if (!filteredActivitySessions.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-sm text-gray-400">No sessions found.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filteredActivitySessions.map(session => {
+                const isActive = !session.ended_at;
+                const durationMinutes = isActive
+                    ? Math.max(0, (Date.now() - new Date(session.started_at).getTime()) / 60000)
+                    : session.duration_minutes;
+                return `
+                <tr class="border-b">
+                    <td class="p-4">
+                        <p class="font-semibold text-gray-900">${safeText(formatActivityType(session.activity_type), 'Unknown')}</p>
+                    </td>
+                    <td class="p-4 text-sm text-gray-700">${safeText(new Date(session.started_at).toLocaleString(), 'Unknown')}</td>
+                    <td class="p-4 text-sm text-gray-700">${safeText(formatDurationMinutes(durationMinutes), 'Unknown')}</td>
+                    <td class="p-4 text-sm text-gray-700">${safeText(session.notes || 'No notes', 'No notes')}</td>
+                    <td class="p-4 text-sm font-semibold ${isActive ? 'text-emerald-700' : 'text-gray-500'}">${isActive ? 'Active' : 'Completed'}</td>
+                    <td class="p-4">
+                        ${isActive ? `<button onclick='endActivitySession(${JSON.stringify(String(session.session_id))})' class="bg-emerald-700 text-white px-3 py-2 rounded-lg text-sm font-bold">End Session</button>` : '<span class="text-sm text-gray-400">Closed</span>'}
+                    </td>
+                </tr>
+            `;
+            }).join('');
+        }
+
+        function filterActivitySessions() {
+            const term = document.getElementById('sessionSearch').value.toLowerCase();
+            filteredActivitySessions = activitySessions.filter(session =>
+                String(session.activity_type ?? '').toLowerCase().includes(term) ||
+                String(session.notes ?? '').toLowerCase().includes(term) ||
+                String(session.ended_at ? 'completed' : 'active').toLowerCase().includes(term)
+            );
+            renderActivitySessions();
+        }
+
+        async function fetchActiveSession(activityType) {
+            const { data, error } = await _supabase
+                .from('activity_sessions')
+                .select('session_id, activity_type, ended_at')
+                .eq('activity_type', activityType)
+                .is('ended_at', null)
+                .order('started_at', { ascending: false })
+                .limit(1);
+
+            if (error) {
+                console.error('Error fetching active session:', error);
+                return null;
+            }
+
+            return (data || [])[0] || null;
         }
 
         async function viewTreeDetail(id) {
@@ -726,22 +882,29 @@
             btn.disabled = true;
             btn.innerText = 'Saving...';
 
-            const { error } = await _supabase.from('harvest_logs').insert([{
+            const activeSession = await fetchActiveSession('harvesting');
+            const harvestPayload = {
                 tree_id: treeId,
                 harvest_date: hDate,
                 gross_weight_kg: gross,
                 leaf_to_nut_ratio: ratio,
-                net_nut_weight_kg: Number(netWeight.toFixed(2)),
                 notes: document.getElementById('harvest-notes').value,
                 created_at: new Date().toISOString()
-            }]);
+            };
+            if (activeSession) harvestPayload.session_id = activeSession.session_id;
+
+            let { error } = await _supabase.from('harvest_logs').insert([harvestPayload]);
+            if (error && String(error.message || '').toLowerCase().includes('session_id')) {
+                delete harvestPayload.session_id;
+                ({ error } = await _supabase.from('harvest_logs').insert([harvestPayload]));
+            }
 
             if (error) {
                 alert('Error: ' + error.message);
                 btn.disabled = false;
                 btn.innerText = 'Save Harvest';
             } else {
-                alert(`Harvest logged for ${treeId}!`);
+                alert(`Harvest logged for ${treeId}! Net weight estimate: ${netWeight.toFixed(2)} kg.`);
                 e.target.reset();
                 netDisplay.innerText = '0.00';
                 showPage('tree-list');
@@ -765,12 +928,20 @@
             btn.disabled = true;
             btn.innerText = 'Saving...';
 
-            const { error } = await _supabase.from('pruning_events').insert([{
+            const activeSession = await fetchActiveSession('pruning');
+            const pruningPayload = {
                 tree_id: treeId,
                 pruned_at: pruningDate,
                 notes: document.getElementById('pruning-notes').value,
                 created_at: new Date().toISOString()
-            }]);
+            };
+            if (activeSession) pruningPayload.session_id = activeSession.session_id;
+
+            let { error } = await _supabase.from('pruning_events').insert([pruningPayload]);
+            if (error && String(error.message || '').toLowerCase().includes('session_id')) {
+                delete pruningPayload.session_id;
+                ({ error } = await _supabase.from('pruning_events').insert([pruningPayload]));
+            }
 
             if (error) {
                 alert('Error: ' + error.message);
@@ -820,6 +991,57 @@
                 showPage('fertigation-list');
             }
         };
+
+        document.getElementById('sessionForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('sessionSubmitBtn');
+            btn.disabled = true;
+            btn.innerText = 'Starting...';
+
+            const payload = {
+                activity_type: document.getElementById('session_activity_type').value,
+                notes: document.getElementById('session_notes').value.trim(),
+                started_at: new Date().toISOString(),
+                created_at: new Date().toISOString()
+            };
+
+            const { error } = await _supabase.from('activity_sessions').insert([payload]);
+
+            if (error) {
+                alert('Error: ' + error.message);
+                btn.disabled = false;
+                btn.innerText = 'Start Session';
+            } else {
+                alert('Session started!');
+                e.target.reset();
+                btn.disabled = false;
+                btn.innerText = 'Start Session';
+                await fetchActivitySessions();
+                showPage('session-list');
+            }
+        };
+
+        async function endActivitySession(sessionId) {
+            const session = activitySessions.find(item => String(item.session_id) === String(sessionId));
+            if (!session) return;
+
+            const endedAt = new Date();
+            const durationMinutes = Math.max(0, Math.round((endedAt.getTime() - new Date(session.started_at).getTime()) / 60000));
+
+            const { error } = await _supabase
+                .from('activity_sessions')
+                .update({
+                    ended_at: endedAt.toISOString(),
+                    duration_minutes: durationMinutes
+                })
+                .eq('session_id', sessionId);
+
+            if (error) {
+                alert('Error: ' + error.message);
+            } else {
+                await fetchActivitySessions();
+            }
+        }
 
         document.getElementById('workForm').onsubmit = async (e) => {
             e.preventDefault();
