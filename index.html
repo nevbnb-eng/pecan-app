@@ -274,16 +274,18 @@
 
                 <div>
                     <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Target Type</label>
-                    <select id="fertigation_target_type" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white">
+                    <select id="fertigation_target_type" onchange="handleFertigationTargetTypeChange()" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white">
                         <option value="field">Field</option>
                         <option value="irrigation_zone">Irrigation Zone</option>
                     </select>
                 </div>
 
                 <div>
-                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Field / Zone Name</label>
-                    <input type="text" id="fertigation_target_name" list="fertigation-target-suggestions" required placeholder="e.g. North Block or Zone A" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
-                    <datalist id="fertigation-target-suggestions"></datalist>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Field / Zone</label>
+                    <select id="fertigation_target_name" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white">
+                        <option value="">Select a target...</option>
+                    </select>
+                    <p id="fertigation-target-help" class="text-xs text-gray-400 mt-1">Targets come from your lookup tables.</p>
                 </div>
 
                 <div>
@@ -296,8 +298,10 @@
 
                 <div>
                     <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Product Name</label>
-                    <input type="text" id="fertigation_product_name" list="fertigation-product-suggestions" required placeholder="e.g. Urea or Trace Mix" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
-                    <datalist id="fertigation-product-suggestions"></datalist>
+                    <select id="fertigation_product_name" onchange="handleFertigationProductChange()" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white">
+                        <option value="">Select a product...</option>
+                    </select>
+                    <p id="fertigation-product-help" class="text-xs text-gray-400 mt-1">Products come from your lookup tables.</p>
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
@@ -427,7 +431,7 @@
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0cWVuYmZ4enlocGNwdWRtbHFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1ODI3MDAsImV4cCI6MjA4NzE1ODcwMH0.5MR78dPRGKbshbHmY1CuAFpS4FMtGtY44IROA-O609c';
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        let orchardData = [], workOrders = [], filteredWO = [], fertigationLogs = [], filteredFertigationLogs = [], activitySessions = [], filteredActivitySessions = [], map, markers = [];
+        let orchardData = [], workOrders = [], filteredWO = [], fertigationLogs = [], filteredFertigationLogs = [], activitySessions = [], filteredActivitySessions = [], fieldLookups = [], irrigationZoneLookups = [], fertiliserProducts = [], map, markers = [];
         let harvestedThisYear = new Set(), prunedThisYear = new Set(), activeHarvestFilter = 'all', activePruningFilter = 'all';
         let activeMapHarvestFilter = 'all', activeMapPruningFilter = 'all';
         let activeVarietyFilters = new Set();
@@ -542,8 +546,30 @@
 
             fertigationLogs = data || [];
             filteredFertigationLogs = [...fertigationLogs];
-            updateFertigationSuggestions();
             renderFertigationLogs();
+        }
+
+        async function fetchLookupTables() {
+            const [
+                { data: fieldsData, error: fieldsError },
+                { data: zonesData, error: zonesError },
+                { data: productsData, error: productsError }
+            ] = await Promise.all([
+                _supabase.from('fields').select('*').order('field_name'),
+                _supabase.from('irrigation_zones').select('*').order('zone_name'),
+                _supabase.from('fertiliser_products').select('*').order('product_name')
+            ]);
+
+            if (fieldsError) console.error('Error fetching fields lookup:', fieldsError);
+            if (zonesError) console.error('Error fetching irrigation zones lookup:', zonesError);
+            if (productsError) console.error('Error fetching fertiliser products lookup:', productsError);
+
+            fieldLookups = fieldsData || [];
+            irrigationZoneLookups = zonesData || [];
+            fertiliserProducts = productsData || [];
+
+            populateFertigationTargetOptions();
+            populateFertigationProductOptions();
         }
 
         async function fetchActivitySessions() {
@@ -823,19 +849,73 @@
 
         function openFertigationForm() {
             document.getElementById('fertigation_date').value = getLocalDateInputValue();
+            document.getElementById('fertigation_target_type').value = 'field';
+            populateFertigationTargetOptions();
+            populateFertigationProductOptions();
             showPage('fertigation-form');
         }
 
-        function updateFertigationSuggestions() {
-            const targetSuggestions = [...new Set(fertigationLogs.map(log => String(log.target_name ?? '').trim()).filter(Boolean))].sort();
-            const productSuggestions = [...new Set(fertigationLogs.map(log => String(log.product_name ?? '').trim()).filter(Boolean))].sort();
+        function getFertigationTargetOptions() {
+            const targetType = document.getElementById('fertigation_target_type').value;
+            return targetType === 'irrigation_zone' ? irrigationZoneLookups : fieldLookups;
+        }
 
-            document.getElementById('fertigation-target-suggestions').innerHTML = targetSuggestions
-                .map(name => `<option value="${safeText(name, '')}"></option>`)
+        function populateFertigationTargetOptions() {
+            const select = document.getElementById('fertigation_target_name');
+            const helpText = document.getElementById('fertigation-target-help');
+            const targetType = document.getElementById('fertigation_target_type').value;
+            const labelKey = targetType === 'irrigation_zone' ? 'zone_name' : 'field_name';
+            const options = getFertigationTargetOptions();
+            const previousValue = select.value;
+
+            select.innerHTML = [`<option value="">Select a ${targetType === 'irrigation_zone' ? 'zone' : 'field'}...</option>`]
+                .concat(options.map(option => `<option value="${escapeHtml(option[labelKey] || '')}">${safeText(option[labelKey], 'Unnamed')}</option>`))
                 .join('');
-            document.getElementById('fertigation-product-suggestions').innerHTML = productSuggestions
-                .map(name => `<option value="${safeText(name, '')}"></option>`)
+
+            const hasPreviousValue = options.some(option => String(option[labelKey] || '') === previousValue);
+            select.value = hasPreviousValue ? previousValue : '';
+            select.disabled = options.length === 0;
+
+            helpText.innerText = options.length
+                ? `Select from your saved ${targetType === 'irrigation_zone' ? 'irrigation zones' : 'fields'}.`
+                : `No ${targetType === 'irrigation_zone' ? 'irrigation zones' : 'fields'} found yet. Add them in Supabase, then refresh this page.`;
+        }
+
+        function populateFertigationProductOptions() {
+            const select = document.getElementById('fertigation_product_name');
+            const helpText = document.getElementById('fertigation-product-help');
+            const previousValue = select.value;
+
+            select.innerHTML = ['<option value="">Select a product...</option>']
+                .concat(fertiliserProducts.map(product => `<option value="${escapeHtml(product.product_name || '')}">${safeText(product.product_name, 'Unnamed product')}</option>`))
                 .join('');
+
+            const hasPreviousValue = fertiliserProducts.some(product => String(product.product_name || '') === previousValue);
+            select.value = hasPreviousValue ? previousValue : '';
+            select.disabled = fertiliserProducts.length === 0;
+
+            helpText.innerText = fertiliserProducts.length
+                ? 'Select from your saved fertiliser products.'
+                : 'No fertiliser products found yet. Add them in Supabase, then refresh this page.';
+        }
+
+        function handleFertigationTargetTypeChange() {
+            populateFertigationTargetOptions();
+        }
+
+        function handleFertigationProductChange() {
+            const selectedProduct = fertiliserProducts.find(product =>
+                String(product.product_name || '') === document.getElementById('fertigation_product_name').value
+            );
+            const applicationTypeSelect = document.getElementById('fertigation_application_type');
+            const unitInput = document.getElementById('fertigation_unit');
+            if (!selectedProduct) return;
+            if (selectedProduct.application_type) {
+                applicationTypeSelect.value = selectedProduct.application_type;
+            }
+            if (selectedProduct.default_unit && !unitInput.value.trim()) {
+                unitInput.value = selectedProduct.default_unit;
+            }
         }
 
         function renderFertigationLogs() {
@@ -1106,6 +1186,19 @@
         document.getElementById('fertigationForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('fertigationSubmitBtn');
+            const targetName = document.getElementById('fertigation_target_name').value.trim();
+            const productName = document.getElementById('fertigation_product_name').value.trim();
+            const unitValue = document.getElementById('fertigation_unit').value.trim();
+
+            if (!targetName) {
+                alert('Please select a field or irrigation zone first.');
+                return;
+            }
+
+            if (!productName) {
+                alert('Please select a fertiliser product first.');
+                return;
+            }
 
             btn.disabled = true;
             btn.innerText = 'Saving...';
@@ -1113,11 +1206,11 @@
             const payload = {
                 application_date: document.getElementById('fertigation_date').value,
                 target_type: document.getElementById('fertigation_target_type').value,
-                target_name: document.getElementById('fertigation_target_name').value.trim(),
+                target_name: targetName,
                 application_type: document.getElementById('fertigation_application_type').value,
-                product_name: document.getElementById('fertigation_product_name').value.trim(),
+                product_name: productName,
                 amount: parseFloat(document.getElementById('fertigation_amount').value),
-                unit: document.getElementById('fertigation_unit').value.trim(),
+                unit: unitValue,
                 notes: document.getElementById('fertigation_notes').value.trim(),
                 created_at: new Date().toISOString()
             };
@@ -1453,8 +1546,15 @@
             document.getElementById('work-id-internal').value = id;
             showPage('work-order');
         }
-        
-        fetchTrees();
+
+        async function initializeApp() {
+            await Promise.all([
+                fetchTrees(),
+                fetchLookupTables()
+            ]);
+        }
+
+        initializeApp();
     </script>
 </body>
 </html>
