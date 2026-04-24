@@ -399,6 +399,7 @@
                 <section class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <h3 class="text-lg font-bold text-emerald-900 mb-4">Fields</h3>
                     <form id="adminFieldForm" class="space-y-4">
+                        <input type="hidden" id="admin_field_id">
                         <div>
                             <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Field Name</label>
                             <input type="text" id="admin_field_name" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
@@ -408,6 +409,7 @@
                             <textarea id="admin_field_notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500" rows="3"></textarea>
                         </div>
                         <button type="submit" id="adminFieldSubmitBtn" class="w-full bg-emerald-700 text-white p-3 rounded-xl font-bold">Add Field</button>
+                        <button type="button" id="adminFieldCancelBtn" onclick="resetAdminFieldForm()" class="hidden w-full bg-gray-100 text-gray-700 p-3 rounded-xl font-bold">Cancel Edit</button>
                     </form>
                     <div class="mt-6">
                         <h4 class="text-xs font-bold uppercase text-gray-400 mb-2">Saved Fields</h4>
@@ -418,6 +420,7 @@
                 <section class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <h3 class="text-lg font-bold text-emerald-900 mb-4">Irrigation Zones</h3>
                     <form id="adminZoneForm" class="space-y-4">
+                        <input type="hidden" id="admin_zone_id">
                         <div>
                             <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Zone Name</label>
                             <input type="text" id="admin_zone_name" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
@@ -433,6 +436,7 @@
                             <textarea id="admin_zone_notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500" rows="3"></textarea>
                         </div>
                         <button type="submit" id="adminZoneSubmitBtn" class="w-full bg-emerald-700 text-white p-3 rounded-xl font-bold">Add Irrigation Zone</button>
+                        <button type="button" id="adminZoneCancelBtn" onclick="resetAdminZoneForm()" class="hidden w-full bg-gray-100 text-gray-700 p-3 rounded-xl font-bold">Cancel Edit</button>
                     </form>
                     <div class="mt-6">
                         <h4 class="text-xs font-bold uppercase text-gray-400 mb-2">Saved Zones</h4>
@@ -443,6 +447,7 @@
                 <section class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <h3 class="text-lg font-bold text-emerald-900 mb-4">Application Products</h3>
                     <form id="adminProductForm" class="space-y-4">
+                        <input type="hidden" id="admin_product_id">
                         <div>
                             <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Product Name</label>
                             <input type="text" id="admin_product_name" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
@@ -475,6 +480,7 @@
                             <textarea id="admin_product_notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500" rows="3"></textarea>
                         </div>
                         <button type="submit" id="adminProductSubmitBtn" class="w-full bg-emerald-700 text-white p-3 rounded-xl font-bold">Add Product</button>
+                        <button type="button" id="adminProductCancelBtn" onclick="resetAdminProductForm()" class="hidden w-full bg-gray-100 text-gray-700 p-3 rounded-xl font-bold">Cancel Edit</button>
                     </form>
                     <div class="mt-6">
                         <h4 class="text-xs font-bold uppercase text-gray-400 mb-2">Saved Products</h4>
@@ -1107,9 +1113,17 @@
                 return;
             }
             container.innerHTML = fieldLookups.map(field => `
-                <div class="rounded-xl border border-gray-200 px-3 py-2">
-                    <p class="font-semibold text-gray-900">${safeText(field.field_name, 'Unnamed field')}</p>
-                    <p class="text-xs text-gray-500">${safeText(field.notes || 'No notes', 'No notes')}</p>
+                <div class="rounded-xl border border-gray-200 px-3 py-3">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <p class="font-semibold text-gray-900">${safeText(field.field_name, 'Unnamed field')}</p>
+                            <p class="text-xs text-gray-500">${safeText(field.notes || 'No notes', 'No notes')}</p>
+                        </div>
+                        <div class="flex gap-2 shrink-0">
+                            <button onclick='startEditField(${JSON.stringify(String(field.field_id))})' class="bg-emerald-50 text-emerald-800 px-3 py-1 rounded-lg text-xs font-bold">Edit</button>
+                            <button onclick='deleteField(${JSON.stringify(String(field.field_id))})' class="bg-red-50 text-red-700 px-3 py-1 rounded-lg text-xs font-bold">Delete</button>
+                        </div>
+                    </div>
                 </div>
             `).join('');
         }
@@ -1124,9 +1138,18 @@
             container.innerHTML = irrigationZoneLookups.map(zone => {
                 const linkedField = fieldLookups.find(field => String(field.field_id) === String(zone.field_id));
                 return `
-                    <div class="rounded-xl border border-gray-200 px-3 py-2">
-                        <p class="font-semibold text-gray-900">${safeText(zone.zone_name, 'Unnamed zone')}</p>
-                        <p class="text-xs text-gray-500">${safeText(linkedField ? linkedField.field_name : 'No linked field', 'No linked field')}</p>
+                    <div class="rounded-xl border border-gray-200 px-3 py-3">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <p class="font-semibold text-gray-900">${safeText(zone.zone_name, 'Unnamed zone')}</p>
+                                <p class="text-xs text-gray-500">${safeText(linkedField ? linkedField.field_name : 'No linked field', 'No linked field')}</p>
+                                <p class="text-xs text-gray-500">${safeText(zone.notes || 'No notes', 'No notes')}</p>
+                            </div>
+                            <div class="flex gap-2 shrink-0">
+                                <button onclick='startEditZone(${JSON.stringify(String(zone.irrigation_zone_id))})' class="bg-emerald-50 text-emerald-800 px-3 py-1 rounded-lg text-xs font-bold">Edit</button>
+                                <button onclick='deleteZone(${JSON.stringify(String(zone.irrigation_zone_id))})' class="bg-red-50 text-red-700 px-3 py-1 rounded-lg text-xs font-bold">Delete</button>
+                            </div>
+                        </div>
                     </div>
                 `;
             }).join('');
@@ -1140,13 +1163,127 @@
                 return;
             }
             container.innerHTML = fertiliserProducts.map(product => `
-                <div class="rounded-xl border border-gray-200 px-3 py-2">
-                    <p class="font-semibold text-gray-900">${safeText(product.product_name, 'Unnamed product')}</p>
-                    <p class="text-xs text-gray-500">${safeText(formatApplicationType(product.application_type), 'Unknown')}</p>
-                    <p class="text-xs text-gray-500">${safeText(product.suggested_rate != null ? `${Number(product.suggested_rate).toFixed(2)} ${product.default_unit || ''}`.trim() : 'No suggested rate', 'No suggested rate')}</p>
-                    <p class="text-xs text-gray-500">${safeText(product.suggested_rate_notes || product.notes || 'No notes', 'No notes')}</p>
+                <div class="rounded-xl border border-gray-200 px-3 py-3">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <p class="font-semibold text-gray-900">${safeText(product.product_name, 'Unnamed product')}</p>
+                            <p class="text-xs text-gray-500">${safeText(formatApplicationType(product.application_type), 'Unknown')}</p>
+                            <p class="text-xs text-gray-500">${safeText(product.suggested_rate != null ? `${Number(product.suggested_rate).toFixed(2)} ${product.default_unit || ''}`.trim() : 'No suggested rate', 'No suggested rate')}</p>
+                            <p class="text-xs text-gray-500">${safeText(product.suggested_rate_notes || product.notes || 'No notes', 'No notes')}</p>
+                        </div>
+                        <div class="flex gap-2 shrink-0">
+                            <button onclick='startEditProduct(${JSON.stringify(String(product.fertiliser_product_id))})' class="bg-emerald-50 text-emerald-800 px-3 py-1 rounded-lg text-xs font-bold">Edit</button>
+                            <button onclick='deleteProduct(${JSON.stringify(String(product.fertiliser_product_id))})' class="bg-red-50 text-red-700 px-3 py-1 rounded-lg text-xs font-bold">Delete</button>
+                        </div>
+                    </div>
                 </div>
             `).join('');
+        }
+
+        function resetAdminFieldForm() {
+            document.getElementById('adminFieldForm').reset();
+            document.getElementById('admin_field_id').value = '';
+            document.getElementById('adminFieldSubmitBtn').innerText = 'Add Field';
+            document.getElementById('adminFieldCancelBtn').classList.add('hidden');
+        }
+
+        function resetAdminZoneForm() {
+            document.getElementById('adminZoneForm').reset();
+            document.getElementById('admin_zone_id').value = '';
+            document.getElementById('adminZoneSubmitBtn').innerText = 'Add Irrigation Zone';
+            document.getElementById('adminZoneCancelBtn').classList.add('hidden');
+            populateAdminZoneFieldOptions();
+        }
+
+        function resetAdminProductForm() {
+            document.getElementById('adminProductForm').reset();
+            document.getElementById('admin_product_id').value = '';
+            document.getElementById('adminProductSubmitBtn').innerText = 'Add Product';
+            document.getElementById('adminProductCancelBtn').classList.add('hidden');
+        }
+
+        function startEditField(fieldId) {
+            const field = fieldLookups.find(item => String(item.field_id) === String(fieldId));
+            if (!field) return;
+            document.getElementById('admin_field_id').value = field.field_id;
+            document.getElementById('admin_field_name').value = field.field_name || '';
+            document.getElementById('admin_field_notes').value = field.notes || '';
+            document.getElementById('adminFieldSubmitBtn').innerText = 'Save Field Changes';
+            document.getElementById('adminFieldCancelBtn').classList.remove('hidden');
+            showPage('admin-page');
+            window.scrollTo(0, 0);
+        }
+
+        function startEditZone(zoneId) {
+            const zone = irrigationZoneLookups.find(item => String(item.irrigation_zone_id) === String(zoneId));
+            if (!zone) return;
+            populateAdminZoneFieldOptions();
+            document.getElementById('admin_zone_id').value = zone.irrigation_zone_id;
+            document.getElementById('admin_zone_name').value = zone.zone_name || '';
+            document.getElementById('admin_zone_field_id').value = zone.field_id != null ? String(zone.field_id) : '';
+            document.getElementById('admin_zone_notes').value = zone.notes || '';
+            document.getElementById('adminZoneSubmitBtn').innerText = 'Save Zone Changes';
+            document.getElementById('adminZoneCancelBtn').classList.remove('hidden');
+            showPage('admin-page');
+            window.scrollTo(0, 0);
+        }
+
+        function startEditProduct(productId) {
+            const product = fertiliserProducts.find(item => String(item.fertiliser_product_id) === String(productId));
+            if (!product) return;
+            document.getElementById('admin_product_id').value = product.fertiliser_product_id;
+            document.getElementById('admin_product_name').value = product.product_name || '';
+            document.getElementById('admin_product_application_type').value = product.application_type || '';
+            document.getElementById('admin_product_default_unit').value = product.default_unit || '';
+            document.getElementById('admin_product_suggested_rate').value = product.suggested_rate != null ? product.suggested_rate : '';
+            document.getElementById('admin_product_suggested_rate_notes').value = product.suggested_rate_notes || '';
+            document.getElementById('admin_product_notes').value = product.notes || '';
+            document.getElementById('adminProductSubmitBtn').innerText = 'Save Product Changes';
+            document.getElementById('adminProductCancelBtn').classList.remove('hidden');
+            showPage('admin-page');
+            window.scrollTo(0, 0);
+        }
+
+        async function deleteField(fieldId) {
+            const field = fieldLookups.find(item => String(item.field_id) === String(fieldId));
+            if (!field) return;
+            if (!confirm(`Delete field "${field.field_name}"?`)) return;
+            const { error } = await _supabase.from('fields').delete().eq('field_id', fieldId);
+            if (error) {
+                alert('Error: ' + error.message);
+                return;
+            }
+            resetAdminFieldForm();
+            await fetchLookupTables();
+            alert('Field deleted.');
+        }
+
+        async function deleteZone(zoneId) {
+            const zone = irrigationZoneLookups.find(item => String(item.irrigation_zone_id) === String(zoneId));
+            if (!zone) return;
+            if (!confirm(`Delete irrigation zone "${zone.zone_name}"?`)) return;
+            const { error } = await _supabase.from('irrigation_zones').delete().eq('irrigation_zone_id', zoneId);
+            if (error) {
+                alert('Error: ' + error.message);
+                return;
+            }
+            resetAdminZoneForm();
+            await fetchLookupTables();
+            alert('Irrigation zone deleted.');
+        }
+
+        async function deleteProduct(productId) {
+            const product = fertiliserProducts.find(item => String(item.fertiliser_product_id) === String(productId));
+            if (!product) return;
+            if (!confirm(`Delete product "${product.product_name}"?`)) return;
+            const { error } = await _supabase.from('fertiliser_products').delete().eq('fertiliser_product_id', productId);
+            if (error) {
+                alert('Error: ' + error.message);
+                return;
+            }
+            resetAdminProductForm();
+            await fetchLookupTables();
+            alert('Product deleted.');
         }
 
         function renderFertigationLogs() {
@@ -1465,32 +1602,39 @@
         document.getElementById('adminFieldForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('adminFieldSubmitBtn');
+            const fieldId = document.getElementById('admin_field_id').value;
             btn.disabled = true;
             btn.innerText = 'Saving...';
 
             const payload = {
                 field_name: document.getElementById('admin_field_name').value.trim(),
                 notes: document.getElementById('admin_field_notes').value.trim() || null,
-                created_at: new Date().toISOString()
             };
+            let error;
 
-            const { error } = await _supabase.from('fields').insert([payload]);
+            if (fieldId) {
+                ({ error } = await _supabase.from('fields').update(payload).eq('field_id', fieldId));
+            } else {
+                payload.created_at = new Date().toISOString();
+                ({ error } = await _supabase.from('fields').insert([payload]));
+            }
 
             if (error) {
                 alert('Error: ' + error.message);
             } else {
-                e.target.reset();
+                resetAdminFieldForm();
                 await fetchLookupTables();
-                alert('Field added.');
+                alert(fieldId ? 'Field updated.' : 'Field added.');
             }
 
             btn.disabled = false;
-            btn.innerText = 'Add Field';
+            btn.innerText = document.getElementById('admin_field_id').value ? 'Save Field Changes' : 'Add Field';
         };
 
         document.getElementById('adminZoneForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('adminZoneSubmitBtn');
+            const zoneId = document.getElementById('admin_zone_id').value;
             btn.disabled = true;
             btn.innerText = 'Saving...';
 
@@ -1498,27 +1642,33 @@
             const payload = {
                 zone_name: document.getElementById('admin_zone_name').value.trim(),
                 field_id: fieldId ? Number(fieldId) : null,
-                notes: document.getElementById('admin_zone_notes').value.trim() || null,
-                created_at: new Date().toISOString()
+                notes: document.getElementById('admin_zone_notes').value.trim() || null
             };
+            let error;
 
-            const { error } = await _supabase.from('irrigation_zones').insert([payload]);
+            if (zoneId) {
+                ({ error } = await _supabase.from('irrigation_zones').update(payload).eq('irrigation_zone_id', zoneId));
+            } else {
+                payload.created_at = new Date().toISOString();
+                ({ error } = await _supabase.from('irrigation_zones').insert([payload]));
+            }
 
             if (error) {
                 alert('Error: ' + error.message);
             } else {
-                e.target.reset();
+                resetAdminZoneForm();
                 await fetchLookupTables();
-                alert('Irrigation zone added.');
+                alert(zoneId ? 'Irrigation zone updated.' : 'Irrigation zone added.');
             }
 
             btn.disabled = false;
-            btn.innerText = 'Add Irrigation Zone';
+            btn.innerText = document.getElementById('admin_zone_id').value ? 'Save Zone Changes' : 'Add Irrigation Zone';
         };
 
         document.getElementById('adminProductForm').onsubmit = async (e) => {
             e.preventDefault();
             const btn = document.getElementById('adminProductSubmitBtn');
+            const productId = document.getElementById('admin_product_id').value;
             btn.disabled = true;
             btn.innerText = 'Saving...';
 
@@ -1530,22 +1680,27 @@
                 default_unit: document.getElementById('admin_product_default_unit').value.trim() || null,
                 suggested_rate: suggestedRateValue === '' ? null : parseFloat(suggestedRateValue),
                 suggested_rate_notes: document.getElementById('admin_product_suggested_rate_notes').value.trim() || null,
-                notes: document.getElementById('admin_product_notes').value.trim() || null,
-                created_at: new Date().toISOString()
+                notes: document.getElementById('admin_product_notes').value.trim() || null
             };
+            let error;
 
-            const { error } = await _supabase.from('fertiliser_products').insert([payload]);
+            if (productId) {
+                ({ error } = await _supabase.from('fertiliser_products').update(payload).eq('fertiliser_product_id', productId));
+            } else {
+                payload.created_at = new Date().toISOString();
+                ({ error } = await _supabase.from('fertiliser_products').insert([payload]));
+            }
 
             if (error) {
                 alert('Error: ' + error.message);
             } else {
-                e.target.reset();
+                resetAdminProductForm();
                 await fetchLookupTables();
-                alert('Product added.');
+                alert(productId ? 'Product updated.' : 'Product added.');
             }
 
             btn.disabled = false;
-            btn.innerText = 'Add Product';
+            btn.innerText = document.getElementById('admin_product_id').value ? 'Save Product Changes' : 'Add Product';
         };
 
         document.getElementById('sessionForm').onsubmit = async (e) => {
