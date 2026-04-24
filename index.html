@@ -512,6 +512,13 @@
                     <label class="text-xs font-bold uppercase text-gray-400">Instructions</label>
                     <p id="wod-instructions" class="text-gray-700 bg-gray-50 p-3 rounded-lg border italic"></p>
                 </div>
+                <div id="wod-photo-section" class="hidden">
+                    <label class="text-xs font-bold uppercase text-gray-400">Photo</label>
+                    <div class="mt-2 border border-gray-200 rounded-xl overflow-hidden bg-gray-50">
+                        <img id="wod-photo-image" alt="Work order photo" class="w-full h-64 object-cover bg-gray-100">
+                    </div>
+                    <a id="wod-photo-link" href="#" target="_blank" rel="noopener noreferrer" class="inline-block mt-2 text-sm font-semibold text-orange-700 hover:underline">Open full photo</a>
+                </div>
                 
                 <div id="close-action-area" class="pt-4 border-t border-gray-100">
                     <button id="close-wo-btn" onclick="handleCloseWorkOrder()" class="w-full bg-red-600 text-white py-4 rounded-xl font-bold shadow-md hover:bg-red-700">Close Work Order</button>
@@ -535,6 +542,15 @@
                 <div>
                     <label class="block text-sm font-medium">Instructions / Findings</label>
                     <textarea id="work-instructions" required class="w-full p-3 border rounded-lg" rows="4"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium">Photo URL (Optional)</label>
+                    <input type="url" id="work-photo-url" oninput="handleWorkPhotoUrlChange()" placeholder="https://..." class="w-full p-3 border rounded-lg">
+                    <p class="text-xs text-gray-400 mt-1">Paste a direct image link for now. We can add upload support next.</p>
+                </div>
+                <div id="work-photo-preview-panel" class="hidden border border-orange-100 rounded-xl p-3 bg-orange-50">
+                    <p class="text-sm font-semibold text-orange-900 mb-2">Photo Preview</p>
+                    <img id="work-photo-preview" alt="Work order preview" class="w-full h-48 object-cover rounded-lg bg-white border border-orange-100">
                 </div>
                 <button type="submit" id="woSubmitBtn" class="w-full bg-orange-600 text-white p-4 rounded-xl font-bold">Submit Work Order</button>
                 <button type="button" onclick="showPage('tree-list')" class="w-full text-gray-500 mt-2">Cancel</button>
@@ -572,6 +588,16 @@
             if (!value) return fallback;
             const parsed = new Date(value);
             return Number.isNaN(parsed.getTime()) ? fallback : parsed.toLocaleDateString();
+        }
+
+        function getSafeExternalUrl(value) {
+            if (!value) return '';
+            try {
+                const parsed = new URL(String(value).trim());
+                return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : '';
+            } catch (error) {
+                return '';
+            }
         }
 
         function formatApplicationType(value) {
@@ -1326,6 +1352,21 @@
             showPage('session-form');
         }
 
+        function handleWorkPhotoUrlChange() {
+            const photoUrl = getSafeExternalUrl(document.getElementById('work-photo-url').value);
+            const panel = document.getElementById('work-photo-preview-panel');
+            const image = document.getElementById('work-photo-preview');
+
+            if (!photoUrl) {
+                panel.classList.add('hidden');
+                image.removeAttribute('src');
+                return;
+            }
+
+            image.src = photoUrl;
+            panel.classList.remove('hidden');
+        }
+
         function renderActivitySessions() {
             const tbody = document.getElementById('sessionTableBody');
             if (!filteredActivitySessions.length) {
@@ -1758,6 +1799,7 @@
             e.preventDefault();
             const btn = document.getElementById('woSubmitBtn');
             const treeId = document.getElementById('work-id-internal').value;
+            const photoUrl = getSafeExternalUrl(document.getElementById('work-photo-url').value);
             
             btn.disabled = true;
             btn.innerText = 'Submitting...';
@@ -1766,6 +1808,7 @@
                 tree_id: treeId,
                 task_type: document.getElementById('task-type').value,
                 instructions: document.getElementById('work-instructions').value,
+                photo_url: photoUrl || null,
                 status: 'open',
                 created_at: new Date().toISOString()
             }]);
@@ -1777,6 +1820,7 @@
             } else {
                 alert('Work order created!');
                 e.target.reset();
+                handleWorkPhotoUrlChange();
                 showPage('tree-list');
                 btn.disabled = false;
                 btn.innerText = 'Submit Work Order';
@@ -1798,10 +1842,16 @@
                 const taskType = String(wo.task_type ?? 'Unspecified');
                 const status = String(wo.status ?? 'unknown');
                 const createdAt = formatDisplayDate(wo.created_at);
+                const hasPhoto = Boolean(getSafeExternalUrl(wo.photo_url));
                 return `
                 <tr class="border-b clickable" onclick='viewWODetail(${JSON.stringify(String(wo.wo_id ?? ''))})'>
                     <td class="p-4 font-bold">${safeText(treeId, 'Unassigned')}</td>
-                    <td class="p-4">${safeText(taskType, 'Unspecified')}</td>
+                    <td class="p-4">
+                        <div class="flex items-center gap-2">
+                            <span>${safeText(taskType, 'Unspecified')}</span>
+                            ${hasPhoto ? '<span class="text-[10px] font-bold uppercase bg-orange-100 text-orange-700 px-2 py-1 rounded-full">Photo</span>' : ''}
+                        </div>
+                    </td>
                     <td class="p-4 text-xs font-semibold ${status === 'closed' ? 'text-gray-400' : 'text-orange-600'}">${safeText(status, 'unknown')}</td>
                     <td class="p-4 text-xs text-gray-400">${safeText(createdAt, 'No date')}</td>
                 </tr>
@@ -1823,11 +1873,25 @@
         function viewWODetail(woId) {
             const wo = workOrders.find(w => String(w.wo_id) === String(woId));
             if (!wo) return;
+            const photoUrl = getSafeExternalUrl(wo.photo_url);
+            const photoSection = document.getElementById('wod-photo-section');
+            const photoImage = document.getElementById('wod-photo-image');
+            const photoLink = document.getElementById('wod-photo-link');
             document.getElementById('wod-id-internal').value = wo.wo_id;
             document.getElementById('wod-tree').innerText = wo.tree_id || 'Unassigned';
             document.getElementById('wod-type').innerText = wo.task_type || 'Unspecified';
             document.getElementById('wod-status').innerText = wo.status || 'unknown';
             document.getElementById('wod-instructions').innerText = wo.instructions || 'No instructions provided.';
+
+            if (photoUrl) {
+                photoImage.src = photoUrl;
+                photoLink.href = photoUrl;
+                photoSection.classList.remove('hidden');
+            } else {
+                photoImage.removeAttribute('src');
+                photoLink.href = '#';
+                photoSection.classList.add('hidden');
+            }
             
             const closeBtn = document.getElementById('close-wo-btn');
             const stamp = document.getElementById('closed-timestamp');
@@ -2049,8 +2113,10 @@
         }
 
         function openWorkOrder(id) {
+            document.getElementById('workForm').reset();
             document.getElementById('work-tree-id').innerText = id;
             document.getElementById('work-id-internal').value = id;
+            handleWorkPhotoUrlChange();
             showPage('work-order');
         }
 
