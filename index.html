@@ -544,13 +544,19 @@
                     <textarea id="work-instructions" required class="w-full p-3 border rounded-lg" rows="4"></textarea>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium">Photo URL (Optional)</label>
+                    <label class="block text-sm font-medium">Upload Photo (Optional)</label>
+                    <input type="file" id="work-photo-file" accept="image/*" onchange="handleWorkPhotoInputChange()" class="w-full p-3 border rounded-lg bg-white">
+                    <p class="text-xs text-gray-400 mt-1">Choose a phone photo or image file to upload to Supabase Storage.</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium">Photo URL (Optional Fallback)</label>
                     <input type="url" id="work-photo-url" oninput="handleWorkPhotoUrlChange()" placeholder="https://..." class="w-full p-3 border rounded-lg">
-                    <p class="text-xs text-gray-400 mt-1">Paste a direct image link for now. We can add upload support next.</p>
+                    <p class="text-xs text-gray-400 mt-1">If no file is chosen, this direct image link will be used instead.</p>
                 </div>
                 <div id="work-photo-preview-panel" class="hidden border border-orange-100 rounded-xl p-3 bg-orange-50">
                     <p class="text-sm font-semibold text-orange-900 mb-2">Photo Preview</p>
                     <img id="work-photo-preview" alt="Work order preview" class="w-full h-48 object-cover rounded-lg bg-white border border-orange-100">
+                    <p id="work-photo-preview-caption" class="text-xs text-orange-800 mt-2"></p>
                 </div>
                 <button type="submit" id="woSubmitBtn" class="w-full bg-orange-600 text-white p-4 rounded-xl font-bold">Submit Work Order</button>
                 <button type="button" onclick="showPage('tree-list')" class="w-full text-gray-500 mt-2">Cancel</button>
@@ -561,6 +567,7 @@
     <script>
         const SUPABASE_URL = 'https://etqenbfxzyhpcpudmlqo.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0cWVuYmZ4enlocGNwdWRtbHFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1ODI3MDAsImV4cCI6MjA4NzE1ODcwMH0.5MR78dPRGKbshbHmY1CuAFpS4FMtGtY44IROA-O609c';
+        const WORK_ORDER_PHOTO_BUCKET = 'work-order-photos';
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
         let orchardData = [], workOrders = [], filteredWO = [], fertigationLogs = [], filteredFertigationLogs = [], activitySessions = [], filteredActivitySessions = [], fieldLookups = [], irrigationZoneLookups = [], fertiliserProducts = [], map, markers = [];
@@ -598,6 +605,37 @@
             } catch (error) {
                 return '';
             }
+        }
+
+        function sanitizeFilenamePart(value, fallback = 'file') {
+            const cleaned = String(value ?? '')
+                .toLowerCase()
+                .replace(/[^a-z0-9._-]+/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-|-$/g, '');
+            return cleaned || fallback;
+        }
+
+        function buildWorkOrderPhotoPath(treeId, filename) {
+            const treePart = sanitizeFilenamePart(treeId || 'unassigned', 'unassigned');
+            const filePart = sanitizeFilenamePart(filename, 'photo');
+            const datePart = getLocalDateInputValue().replace(/-/g, '/');
+            return `work-orders/${datePart}/${treePart}-${Date.now()}-${filePart}`;
+        }
+
+        async function uploadWorkOrderPhotoFile(treeId, file) {
+            const filePath = buildWorkOrderPhotoPath(treeId, file.name);
+            const { error } = await _supabase.storage.from(WORK_ORDER_PHOTO_BUCKET).upload(filePath, file, {
+                cacheControl: '3600',
+                upsert: false
+            });
+
+            if (error) {
+                throw error;
+            }
+
+            const { data } = _supabase.storage.from(WORK_ORDER_PHOTO_BUCKET).getPublicUrl(filePath);
+            return data?.publicUrl || '';
         }
 
         function formatApplicationType(value) {
@@ -1354,17 +1392,47 @@
 
         function handleWorkPhotoUrlChange() {
             const photoUrl = getSafeExternalUrl(document.getElementById('work-photo-url').value);
+            const fileInput = document.getElementById('work-photo-file');
             const panel = document.getElementById('work-photo-preview-panel');
             const image = document.getElementById('work-photo-preview');
+            const caption = document.getElementById('work-photo-preview-caption');
+
+            if (fileInput.files && fileInput.files.length > 0) {
+                return;
+            }
 
             if (!photoUrl) {
                 panel.classList.add('hidden');
                 image.removeAttribute('src');
+                caption.innerText = '';
                 return;
             }
 
             image.src = photoUrl;
+            caption.innerText = 'Previewing direct image URL.';
             panel.classList.remove('hidden');
+        }
+
+        function handleWorkPhotoInputChange() {
+            const fileInput = document.getElementById('work-photo-file');
+            const urlInput = document.getElementById('work-photo-url');
+            const panel = document.getElementById('work-photo-preview-panel');
+            const image = document.getElementById('work-photo-preview');
+            const caption = document.getElementById('work-photo-preview-caption');
+            const file = fileInput.files && fileInput.files[0];
+
+            if (!file) {
+                handleWorkPhotoUrlChange();
+                return;
+            }
+
+            image.src = URL.createObjectURL(file);
+            caption.innerText = `Selected file: ${file.name}`;
+            panel.classList.remove('hidden');
+
+            if (urlInput.value.trim()) {
+                caption.innerText += ' (uploaded file will be used instead of the URL)';
+            }
         }
 
         function renderActivitySessions() {
@@ -1799,10 +1867,25 @@
             e.preventDefault();
             const btn = document.getElementById('woSubmitBtn');
             const treeId = document.getElementById('work-id-internal').value;
-            const photoUrl = getSafeExternalUrl(document.getElementById('work-photo-url').value);
+            const fallbackPhotoUrl = getSafeExternalUrl(document.getElementById('work-photo-url').value);
+            const photoFile = document.getElementById('work-photo-file').files[0];
             
             btn.disabled = true;
             btn.innerText = 'Submitting...';
+
+            let photoUrl = fallbackPhotoUrl;
+
+            if (photoFile) {
+                try {
+                    btn.innerText = 'Uploading Photo...';
+                    photoUrl = await uploadWorkOrderPhotoFile(treeId, photoFile);
+                } catch (error) {
+                    alert('Photo upload failed: ' + (error.message || error));
+                    btn.disabled = false;
+                    btn.innerText = 'Submit Work Order';
+                    return;
+                }
+            }
 
             const { error } = await _supabase.from('work_orders').insert([{
                 tree_id: treeId,
