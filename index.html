@@ -25,6 +25,7 @@
             <nav class="flex gap-4 overflow-x-auto pb-2">
                 <button onclick="toggleMapView()" id="viewToggle" class="bg-emerald-700 px-4 py-2 rounded-lg text-sm font-bold shrink-0">Map View</button>
                 <button onclick="showPage('tree-list')" class="hover:underline shrink-0">Trees</button>
+                <button onclick="openMetricsPage()" class="hover:underline shrink-0">Metrics</button>
                 <button onclick="fetchFertigationLogs(); showPage('fertigation-list')" class="hover:underline shrink-0">Fertigation</button>
                 <button onclick="openAdminPage()" class="hover:underline shrink-0">Admin</button>
                 <button onclick="fetchActivitySessions(); showPage('session-list')" class="hover:underline shrink-0">Sessions</button>
@@ -367,6 +368,51 @@
             </form>
         </section>
 
+        <section id="metrics-page" class="page">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-emerald-900">Metrics</h2>
+                    <p class="text-sm text-gray-500">Season summaries, operational counts, and trend snapshots for the orchard.</p>
+                </div>
+                <button onclick="openMetricsPage()" class="bg-emerald-700 text-white px-4 py-3 rounded-xl font-bold shadow-sm">Refresh Metrics</button>
+            </div>
+
+            <div id="metrics-summary-cards" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"></div>
+
+            <div class="grid gap-4 lg:grid-cols-2 mt-6">
+                <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <h3 class="text-lg font-bold text-emerald-900">Harvest This Year by Field</h3>
+                    <div id="metrics-harvest-by-field" class="mt-4 space-y-3"></div>
+                </section>
+                <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <h3 class="text-lg font-bold text-emerald-900">Harvest This Year by Cultivar</h3>
+                    <div id="metrics-harvest-by-cultivar" class="mt-4 space-y-3"></div>
+                </section>
+            </div>
+
+            <div class="grid gap-4 lg:grid-cols-2 mt-6">
+                <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <h3 class="text-lg font-bold text-emerald-900">Work Orders by Type</h3>
+                    <div id="metrics-workorders-by-type" class="mt-4 space-y-3"></div>
+                </section>
+                <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <h3 class="text-lg font-bold text-emerald-900">Work Orders by Cultivar</h3>
+                    <div id="metrics-workorders-by-cultivar" class="mt-4 space-y-3"></div>
+                </section>
+            </div>
+
+            <div class="grid gap-4 lg:grid-cols-2 mt-6">
+                <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <h3 class="text-lg font-bold text-emerald-900">Fertigation Applications by Type</h3>
+                    <div id="metrics-fertigation-by-type" class="mt-4 space-y-3"></div>
+                </section>
+                <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <h3 class="text-lg font-bold text-emerald-900">Session Hours by Activity</h3>
+                    <div id="metrics-session-hours" class="mt-4 space-y-3"></div>
+                </section>
+            </div>
+        </section>
+
         <section id="session-list" class="page">
             <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
                 <div>
@@ -600,7 +646,7 @@
         const WORK_ORDER_PHOTO_BUCKET = 'work-order-photos';
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        let orchardData = [], workOrders = [], filteredWO = [], fertigationLogs = [], filteredFertigationLogs = [], activitySessions = [], filteredActivitySessions = [], fieldLookups = [], irrigationZoneLookups = [], fertiliserProducts = [], map, markers = [], workOrderMarkers = [];
+        let orchardData = [], workOrders = [], filteredWO = [], fertigationLogs = [], filteredFertigationLogs = [], activitySessions = [], filteredActivitySessions = [], fieldLookups = [], irrigationZoneLookups = [], fertiliserProducts = [], harvestMetricLogs = [], pruningMetricEvents = [], map, markers = [], workOrderMarkers = [];
         let harvestedThisYear = new Set(), prunedThisYear = new Set(), activeHarvestFilter = 'all', activePruningFilter = 'all';
         let activeMapHarvestFilter = 'all', activeMapPruningFilter = 'all';
         let activeVarietyFilters = new Set();
@@ -750,6 +796,53 @@
             return `${hours}h ${remainder}m`;
         }
 
+        function getHarvestNetWeight(log) {
+            if (log.net_nut_weight_kg != null && !Number.isNaN(Number(log.net_nut_weight_kg))) {
+                return Number(log.net_nut_weight_kg);
+            }
+            const gross = Number(log.gross_weight_kg) || 0;
+            const ratio = Number(log.leaf_to_nut_ratio) || 0;
+            return gross * (1 - ratio);
+        }
+
+        function renderMetricBarList(containerId, items, formatter) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            if (!items.length) {
+                container.innerHTML = '<p class="text-sm text-gray-400">No data available yet.</p>';
+                return;
+            }
+
+            const maxValue = Math.max(...items.map(item => Number(item.value) || 0), 1);
+            container.innerHTML = items.map(item => {
+                const width = Math.max(8, ((Number(item.value) || 0) / maxValue) * 100);
+                return `
+                    <div>
+                        <div class="flex items-center justify-between gap-3 mb-1">
+                            <span class="text-sm font-medium text-gray-900">${safeText(item.label, 'Unknown')}</span>
+                            <span class="text-sm font-bold text-emerald-800">${safeText(formatter(item.value, item), '0')}</span>
+                        </div>
+                        <div class="h-3 rounded-full bg-gray-100 overflow-hidden">
+                            <div class="h-full rounded-full bg-emerald-600" style="width:${width}%"></div>
+                        </div>
+                        ${item.meta ? `<p class="text-xs text-gray-500 mt-1">${safeText(item.meta, '')}</p>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderMetricsSummaryCards(cards) {
+            const container = document.getElementById('metrics-summary-cards');
+            if (!container) return;
+            container.innerHTML = cards.map(card => `
+                <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <p class="text-xs font-bold uppercase tracking-wide text-gray-400">${safeText(card.label, '')}</p>
+                    <p class="text-3xl font-black text-emerald-900 mt-2">${safeText(card.value, '0')}</p>
+                    <p class="text-sm text-gray-500 mt-2">${safeText(card.helper || '', '')}</p>
+                </div>
+            `).join('');
+        }
+
         async function fetchTrees() {
             const { data, error } = await _supabase.from('trees').select('*').order('tree_id');
             if (error) console.error('Error fetching trees:', error);
@@ -828,6 +921,131 @@
             activitySessions = data || [];
             filteredActivitySessions = [...activitySessions];
             renderActivitySessions();
+        }
+
+        async function fetchMetricHarvestLogs() {
+            const { data, error } = await _supabase
+                .from('harvest_logs')
+                .select('tree_id, net_nut_weight_kg, gross_weight_kg, leaf_to_nut_ratio, harvest_date, created_at');
+
+            if (error) {
+                console.error('Error fetching metric harvest logs:', error);
+                harvestMetricLogs = [];
+                return;
+            }
+
+            harvestMetricLogs = data || [];
+        }
+
+        async function fetchMetricPruningEvents() {
+            const { data, error } = await _supabase
+                .from('pruning_events')
+                .select('tree_id, pruned_at, created_at');
+
+            if (error) {
+                console.error('Error fetching metric pruning events:', error);
+                pruningMetricEvents = [];
+                return;
+            }
+
+            pruningMetricEvents = data || [];
+        }
+
+        async function openMetricsPage() {
+            await Promise.all([
+                fetchTrees(),
+                fetchWorkOrders(),
+                fetchFertigationLogs(),
+                fetchActivitySessions(),
+                fetchMetricHarvestLogs(),
+                fetchMetricPruningEvents()
+            ]);
+            renderMetricsPage();
+            showPage('metrics-page');
+        }
+
+        function renderMetricsPage() {
+            const { label } = getCurrentYearRange();
+            const treeById = new Map(orchardData.map(tree => [String(tree.tree_id ?? ''), tree]));
+            const harvestThisYear = harvestMetricLogs.filter(log => {
+                const sourceDate = log.harvest_date || log.created_at;
+                return sourceDate && new Date(sourceDate).getFullYear() === label;
+            });
+            const pruningThisYear = pruningMetricEvents.filter(event => {
+                const sourceDate = event.pruned_at || event.created_at;
+                return sourceDate && new Date(sourceDate).getFullYear() === label;
+            });
+            const openWorkOrders = workOrders.filter(wo => String(wo.status ?? '').toLowerCase() !== 'closed');
+            const activeSessions = activitySessions.filter(session => !session.ended_at);
+            const completedSessions = activitySessions.filter(session => session.ended_at);
+            const totalSessionHours = completedSessions.reduce((sum, session) => sum + ((Number(session.duration_minutes) || 0) / 60), 0);
+            const totalHarvestKg = harvestThisYear.reduce((sum, log) => sum + getHarvestNetWeight(log), 0);
+            const totalApplications = fertigationLogs.length;
+
+            renderMetricsSummaryCards([
+                { label: 'Trees', value: String(orchardData.length), helper: `${harvestedThisYear.size} harvested and ${prunedThisYear.size} pruned in ${label}` },
+                { label: 'Harvest This Year', value: `${totalHarvestKg.toFixed(2)} kg`, helper: `${harvestThisYear.length} harvest logs in ${label}` },
+                { label: 'Open Work Orders', value: String(openWorkOrders.length), helper: `${workOrders.length} total work orders tracked` },
+                { label: 'Session Hours', value: `${totalSessionHours.toFixed(1)} h`, helper: `${activeSessions.length} active sessions, ${completedSessions.length} completed` }
+            ]);
+
+            const harvestByField = Object.entries(harvestThisYear.reduce((acc, log) => {
+                const tree = treeById.get(String(log.tree_id ?? ''));
+                const field = String(tree?.field_name ?? 'No Field');
+                acc[field] = (acc[field] || 0) + getHarvestNetWeight(log);
+                return acc;
+            }, {}))
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .map(([labelText, value]) => ({ label: labelText, value }));
+
+            const harvestByCultivar = Object.entries(harvestThisYear.reduce((acc, log) => {
+                const tree = treeById.get(String(log.tree_id ?? ''));
+                const cultivar = String(tree?.variety ?? 'Unknown cultivar');
+                acc[cultivar] = (acc[cultivar] || 0) + getHarvestNetWeight(log);
+                return acc;
+            }, {}))
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .map(([labelText, value]) => ({ label: labelText, value }));
+
+            const workOrdersByType = Object.entries(workOrders.reduce((acc, wo) => {
+                const type = String(wo.task_type ?? 'Unspecified');
+                acc[type] = (acc[type] || 0) + 1;
+                return acc;
+            }, {}))
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .map(([labelText, value]) => ({ label: labelText, value }));
+
+            const workOrdersByCultivar = Object.entries(workOrders.reduce((acc, wo) => {
+                const tree = treeById.get(String(wo.tree_id ?? ''));
+                const cultivar = String(tree?.variety ?? 'Unknown cultivar');
+                acc[cultivar] = (acc[cultivar] || 0) + 1;
+                return acc;
+            }, {}))
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .map(([labelText, value]) => ({ label: labelText, value }));
+
+            const fertigationByType = Object.entries(fertigationLogs.reduce((acc, log) => {
+                const type = formatApplicationType(log.application_type);
+                acc[type] = (acc[type] || 0) + 1;
+                return acc;
+            }, {}))
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .map(([labelText, value]) => ({ label: labelText, value, meta: `${totalApplications ? ((value / totalApplications) * 100).toFixed(1) : '0.0'}% of all applications` }));
+
+            const sessionHoursByActivity = Object.entries(completedSessions.reduce((acc, session) => {
+                const activity = formatActivityType(session.activity_type);
+                acc[activity] = (acc[activity] || 0) + ((Number(session.duration_minutes) || 0) / 60);
+                return acc;
+            }, {}))
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .map(([labelText, value]) => ({ label: labelText, value }));
+
+            renderMetricBarList('metrics-harvest-by-field', harvestByField, value => `${Number(value).toFixed(2)} kg`);
+            renderMetricBarList('metrics-harvest-by-cultivar', harvestByCultivar, value => `${Number(value).toFixed(2)} kg`);
+            renderMetricBarList('metrics-workorders-by-type', workOrdersByType, value => `${value}`);
+            renderMetricBarList('metrics-workorders-by-cultivar', workOrdersByCultivar, value => `${value}`);
+            renderMetricBarList('metrics-fertigation-by-type', fertigationByType, value => `${value}`);
+            renderMetricBarList('metrics-session-hours', sessionHoursByActivity, value => `${Number(value).toFixed(1)} h`);
         }
 
         async function fetchHarvestStatusThisYear() {
