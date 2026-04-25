@@ -92,6 +92,32 @@
                     </div>
                 </div>
             </div>
+            <div class="mt-4 bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+                <div class="grid gap-4 lg:grid-cols-2">
+                    <div>
+                        <h3 class="text-lg font-bold text-emerald-900">Map Work Order Status</h3>
+                        <div class="mt-3 flex flex-wrap gap-2">
+                            <button onclick="setMapWorkOrderStatusFilter('all')" id="map-workorder-status-all" class="bg-orange-700 text-white px-3 py-2 rounded-full text-sm font-bold">All</button>
+                            <button onclick="setMapWorkOrderStatusFilter('open')" id="map-workorder-status-open" class="bg-white text-orange-800 border border-orange-200 px-3 py-2 rounded-full text-sm font-bold">Open</button>
+                            <button onclick="setMapWorkOrderStatusFilter('closed')" id="map-workorder-status-closed" class="bg-white text-gray-700 border border-gray-200 px-3 py-2 rounded-full text-sm font-bold">Closed</button>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-emerald-900">Map Work Order Types</h3>
+                        <div id="map-workorder-type-filters" class="mt-3 flex flex-wrap gap-2"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-4 grid gap-4 lg:grid-cols-2">
+                <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+                    <h3 class="text-lg font-bold text-emerald-900">Visible Work Order Counts</h3>
+                    <div id="map-workorder-type-summary" class="mt-4 space-y-2 text-sm text-gray-700"></div>
+                </div>
+                <div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+                    <h3 class="text-lg font-bold text-emerald-900">Visible Work Orders by Cultivar</h3>
+                    <div id="map-workorder-cultivar-summary" class="mt-4 space-y-2 text-sm text-gray-700"></div>
+                </div>
+            </div>
             <div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-600">
                 <div class="flex items-center gap-2">
                     <span class="inline-block w-3 h-3 rounded-full bg-emerald-600"></span>
@@ -108,6 +134,10 @@
                 <div class="flex items-center gap-2">
                     <span class="inline-block w-3 h-3 rounded-full border-[3px] border-slate-300 bg-white"></span>
                     <span>Pruning pending this year</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="inline-block w-3 h-3 rounded-sm bg-orange-600"></span>
+                    <span>Work order</span>
                 </div>
             </div>
             <div id="location-confirm-panel" class="hidden mt-4 bg-white border border-emerald-200 rounded-2xl shadow-sm p-4 max-w-xl">
@@ -570,10 +600,12 @@
         const WORK_ORDER_PHOTO_BUCKET = 'work-order-photos';
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        let orchardData = [], workOrders = [], filteredWO = [], fertigationLogs = [], filteredFertigationLogs = [], activitySessions = [], filteredActivitySessions = [], fieldLookups = [], irrigationZoneLookups = [], fertiliserProducts = [], map, markers = [];
+        let orchardData = [], workOrders = [], filteredWO = [], fertigationLogs = [], filteredFertigationLogs = [], activitySessions = [], filteredActivitySessions = [], fieldLookups = [], irrigationZoneLookups = [], fertiliserProducts = [], map, markers = [], workOrderMarkers = [];
         let harvestedThisYear = new Set(), prunedThisYear = new Set(), activeHarvestFilter = 'all', activePruningFilter = 'all';
         let activeMapHarvestFilter = 'all', activeMapPruningFilter = 'all';
         let activeVarietyFilters = new Set();
+        let activeMapWorkOrderStatusFilter = 'all';
+        let activeMapWorkOrderTypeFilters = new Set();
         let pendingLocationMarker = null, pendingLocation = null;
         let currentUserLocationMarker = null;
 
@@ -645,6 +677,22 @@
             return value || 'Unknown';
         }
 
+        function formatWorkOrderStatus(value) {
+            if (!value) return 'Unknown';
+            return String(value).charAt(0).toUpperCase() + String(value).slice(1);
+        }
+
+        function getWorkOrderTypeColor(taskType) {
+            const palette = ['#ea580c', '#d97706', '#dc2626', '#0f766e', '#0369a1', '#7c3aed', '#a16207'];
+            const normalized = String(taskType || 'unknown');
+            let hash = 0;
+            for (let i = 0; i < normalized.length; i += 1) {
+                hash = ((hash << 5) - hash) + normalized.charCodeAt(i);
+                hash |= 0;
+            }
+            return palette[Math.abs(hash) % palette.length];
+        }
+
         function updatePendingLocationPanel(treeId, latitude, longitude) {
             document.getElementById('location-confirm-tree').innerText = treeId;
             document.getElementById('location-confirm-lat').innerText = Number(latitude).toFixed(7);
@@ -711,6 +759,7 @@
             await fetchHarvestStatusThisYear();
             await fetchPruningStatusThisYear();
             filterTrees();
+            updateMapWorkOrderSummary();
             if (map) {
                 updateMapMarkers();
                 fitMapToTreeBounds();
@@ -908,6 +957,7 @@
             else activeVarietyFilters.add(variety);
 
             renderVarietyFilters();
+            updateMapWorkOrderSummary();
             if (map) {
                 updateMapMarkers();
                 fitMapToTreeBounds();
@@ -918,6 +968,7 @@
             const varieties = getAvailableVarieties();
             activeVarietyFilters = enabled ? new Set(varieties) : new Set();
             renderVarietyFilters();
+            updateMapWorkOrderSummary();
             if (map) {
                 updateMapMarkers();
                 fitMapToTreeBounds();
@@ -938,6 +989,7 @@
                 filterName === 'pending'
                     ? 'bg-amber-100 text-amber-800 border border-amber-200 px-3 py-2 rounded-full text-sm font-bold'
                     : 'bg-white text-amber-800 border border-amber-200 px-3 py-2 rounded-full text-sm font-bold';
+            updateMapWorkOrderSummary();
             if (map) {
                 updateMapMarkers();
                 fitMapToTreeBounds();
@@ -958,10 +1010,181 @@
                 filterName === 'pending'
                     ? 'bg-slate-100 text-slate-700 border border-slate-200 px-3 py-2 rounded-full text-sm font-bold'
                     : 'bg-white text-slate-700 border border-slate-200 px-3 py-2 rounded-full text-sm font-bold';
+            updateMapWorkOrderSummary();
             if (map) {
                 updateMapMarkers();
                 fitMapToTreeBounds();
             }
+        }
+
+        function getAvailableWorkOrderTypes() {
+            return [...new Set(
+                workOrders
+                    .map(wo => String(wo.task_type ?? '').trim())
+                    .filter(Boolean)
+            )].sort((a, b) => a.localeCompare(b));
+        }
+
+        function syncMapWorkOrderTypeFilters() {
+            const availableTypes = getAvailableWorkOrderTypes();
+            if (activeMapWorkOrderTypeFilters.size === 0) {
+                activeMapWorkOrderTypeFilters = new Set(availableTypes);
+                return;
+            }
+            activeMapWorkOrderTypeFilters = new Set(
+                [...activeMapWorkOrderTypeFilters].filter(type => availableTypes.includes(type))
+            );
+            if (activeMapWorkOrderTypeFilters.size === 0) {
+                activeMapWorkOrderTypeFilters = new Set(availableTypes);
+            }
+        }
+
+        function renderMapWorkOrderTypeFilters() {
+            const container = document.getElementById('map-workorder-type-filters');
+            if (!container) return;
+            const types = getAvailableWorkOrderTypes();
+            if (!types.length) {
+                container.innerHTML = '<p class="text-sm text-gray-400">No work orders found yet.</p>';
+                return;
+            }
+            container.innerHTML = [
+                `<button onclick="setAllMapWorkOrderTypeFilters(true)" class="bg-orange-700 text-white px-3 py-2 rounded-lg text-sm font-bold">Show All</button>`,
+                `<button onclick="setAllMapWorkOrderTypeFilters(false)" class="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm font-bold">Hide All</button>`
+            ].concat(types.map(type => {
+                const isActive = activeMapWorkOrderTypeFilters.has(type);
+                return `
+                    <button onclick='toggleMapWorkOrderTypeFilter(${JSON.stringify(type)})' class="${isActive ? 'bg-orange-100 text-orange-800 border-orange-200' : 'bg-white text-gray-600 border-gray-200'} border px-3 py-2 rounded-full text-sm font-bold">
+                        ${safeText(type, 'Unknown')}
+                    </button>
+                `;
+            })).join('');
+        }
+
+        function toggleMapWorkOrderTypeFilter(taskType) {
+            if (activeMapWorkOrderTypeFilters.has(taskType)) activeMapWorkOrderTypeFilters.delete(taskType);
+            else activeMapWorkOrderTypeFilters.add(taskType);
+            renderMapWorkOrderTypeFilters();
+            updateMapWorkOrderSummary();
+            if (map) updateMapMarkers();
+        }
+
+        function setAllMapWorkOrderTypeFilters(enabled) {
+            const availableTypes = getAvailableWorkOrderTypes();
+            activeMapWorkOrderTypeFilters = enabled ? new Set(availableTypes) : new Set();
+            renderMapWorkOrderTypeFilters();
+            updateMapWorkOrderSummary();
+            if (map) updateMapMarkers();
+        }
+
+        function setMapWorkOrderStatusFilter(filterName) {
+            activeMapWorkOrderStatusFilter = filterName;
+            document.getElementById('map-workorder-status-all').className =
+                filterName === 'all'
+                    ? 'bg-orange-700 text-white px-3 py-2 rounded-full text-sm font-bold'
+                    : 'bg-white text-orange-800 border border-orange-200 px-3 py-2 rounded-full text-sm font-bold';
+            document.getElementById('map-workorder-status-open').className =
+                filterName === 'open'
+                    ? 'bg-orange-100 text-orange-800 border border-orange-200 px-3 py-2 rounded-full text-sm font-bold'
+                    : 'bg-white text-orange-800 border border-orange-200 px-3 py-2 rounded-full text-sm font-bold';
+            document.getElementById('map-workorder-status-closed').className =
+                filterName === 'closed'
+                    ? 'bg-gray-200 text-gray-700 px-3 py-2 rounded-full text-sm font-bold'
+                    : 'bg-white text-gray-700 border border-gray-200 px-3 py-2 rounded-full text-sm font-bold';
+            updateMapWorkOrderSummary();
+            if (map) updateMapMarkers();
+        }
+
+        function getMappableWorkOrders() {
+            if (activeMapWorkOrderTypeFilters.size === 0) return [];
+
+            const treeById = new Map(
+                orchardData
+                    .filter(tree => tree.latitude != null && tree.longitude != null)
+                    .map(tree => [String(tree.tree_id ?? ''), tree])
+            );
+
+            return workOrders
+                .map(wo => {
+                    const tree = treeById.get(String(wo.tree_id ?? ''));
+                    if (!tree) return null;
+                    return { workOrder: wo, tree };
+                })
+                .filter(Boolean)
+                .filter(({ workOrder, tree }) => {
+                    const variety = String(tree.variety ?? '').trim();
+                    if (activeVarietyFilters.size === 0) return false;
+                    if (variety && !activeVarietyFilters.has(variety)) return false;
+
+                    const treeId = String(tree.tree_id ?? '');
+                    const isHarvested = harvestedThisYear.has(treeId);
+                    const isPruned = prunedThisYear.has(treeId);
+                    if (activeMapHarvestFilter === 'harvested' && !isHarvested) return false;
+                    if (activeMapHarvestFilter === 'pending' && isHarvested) return false;
+                    if (activeMapPruningFilter === 'pruned' && !isPruned) return false;
+                    if (activeMapPruningFilter === 'pending' && isPruned) return false;
+
+                    const taskType = String(workOrder.task_type ?? '').trim();
+                    if (!activeMapWorkOrderTypeFilters.has(taskType)) return false;
+
+                    const status = String(workOrder.status ?? '').toLowerCase();
+                    if (activeMapWorkOrderStatusFilter === 'open' && status !== 'open') return false;
+                    if (activeMapWorkOrderStatusFilter === 'closed' && status !== 'closed') return false;
+                    return true;
+                });
+        }
+
+        function updateMapWorkOrderSummary() {
+            const typeContainer = document.getElementById('map-workorder-type-summary');
+            const cultivarContainer = document.getElementById('map-workorder-cultivar-summary');
+            if (!typeContainer || !cultivarContainer) return;
+
+            const visibleItems = getMappableWorkOrders();
+            if (!visibleItems.length) {
+                typeContainer.innerHTML = '<p class="text-gray-400">No visible work orders for the current map filters.</p>';
+                cultivarContainer.innerHTML = '<p class="text-gray-400">No cultivar tallies for the current map filters.</p>';
+                return;
+            }
+
+            const typeCounts = visibleItems.reduce((acc, item) => {
+                const key = String(item.workOrder.task_type ?? 'Unspecified');
+                acc[key] = (acc[key] || 0) + 1;
+                return acc;
+            }, {});
+            const cultivarCounts = visibleItems.reduce((acc, item) => {
+                const cultivar = String(item.tree.variety ?? 'Unknown cultivar');
+                const taskType = String(item.workOrder.task_type ?? 'Unspecified');
+                if (!acc[cultivar]) acc[cultivar] = { total: 0, byType: {} };
+                acc[cultivar].total += 1;
+                acc[cultivar].byType[taskType] = (acc[cultivar].byType[taskType] || 0) + 1;
+                return acc;
+            }, {});
+
+            typeContainer.innerHTML = Object.entries(typeCounts)
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .map(([type, count]) => `
+                    <div class="flex items-center justify-between rounded-xl border border-gray-100 px-3 py-2">
+                        <span class="font-medium text-gray-900">${safeText(type, 'Unspecified')}</span>
+                        <span class="text-sm font-bold text-orange-700">${count}</span>
+                    </div>
+                `).join('');
+
+            cultivarContainer.innerHTML = Object.entries(cultivarCounts)
+                .sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0]))
+                .map(([cultivar, details]) => {
+                    const breakdown = Object.entries(details.byType)
+                        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                        .map(([type, count]) => `${type}: ${count}`)
+                        .join(' | ');
+                    return `
+                        <div class="rounded-xl border border-gray-100 px-3 py-2">
+                            <div class="flex items-center justify-between gap-3">
+                                <span class="font-medium text-gray-900">${safeText(cultivar, 'Unknown cultivar')}</span>
+                                <span class="text-sm font-bold text-orange-700">${details.total}</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">${safeText(breakdown, '')}</p>
+                        </div>
+                    `;
+                }).join('');
         }
 
         function filterTrees() {
@@ -1915,7 +2138,11 @@
             if (error) console.error('Error fetching work orders:', error);
             workOrders = data || [];
             filteredWO = [...workOrders];
+            syncMapWorkOrderTypeFilters();
+            renderMapWorkOrderTypeFilters();
             renderWorkOrders();
+            updateMapWorkOrderSummary();
+            if (map) updateMapMarkers();
         }
 
         function renderWorkOrders() {
@@ -2009,6 +2236,7 @@
             map = L.map('map').setView([-27.65, 152.2], 18);
             L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains:['mt0','mt1','mt2','mt3'] }).addTo(map);
             updateMapMarkers();
+            updateMapWorkOrderSummary();
             fitMapToTreeBounds();
         }
 
@@ -2032,6 +2260,7 @@
 
         function updateMapMarkers() {
             markers.forEach(m => map.removeLayer(m));
+            workOrderMarkers.forEach(m => map.removeLayer(m));
             markers = orchardData
                 .filter(t => t.latitude != null && t.longitude != null)
                 .filter(tree => {
@@ -2063,6 +2292,51 @@
                 const m = L.marker([tree.latitude, tree.longitude], { icon }).addTo(map);
                 m.on('click', () => viewTreeDetail(tree.tree_id));
                 return m;
+            });
+
+            const workOrdersByTree = getMappableWorkOrders().reduce((acc, item) => {
+                const treeId = String(item.tree.tree_id ?? '');
+                if (!acc[treeId]) acc[treeId] = [];
+                acc[treeId].push(item);
+                return acc;
+            }, {});
+
+            workOrderMarkers = Object.values(workOrdersByTree).flatMap(itemsForTree => {
+                return itemsForTree.map((item, index) => {
+                    const { workOrder, tree } = item;
+                    const offsetStep = 0.000018;
+                    const angle = index * (Math.PI / 3);
+                    const lat = Number(tree.latitude) + (Math.sin(angle) * offsetStep);
+                    const lng = Number(tree.longitude) + (Math.cos(angle) * offsetStep);
+                    const color = getWorkOrderTypeColor(workOrder.task_type);
+                    const icon = L.divIcon({
+                        className: 'work-order-map-marker',
+                        html: `
+                            <div style="
+                                width: 14px;
+                                height: 14px;
+                                border-radius: 4px;
+                                background: ${color};
+                                border: 2px solid white;
+                                box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.25);
+                            "></div>
+                        `,
+                        iconSize: [14, 14],
+                        iconAnchor: [7, 7]
+                    });
+                    const marker = L.marker([lat, lng], { icon }).addTo(map);
+                    const popupHtml = `
+                        <div class="text-sm">
+                            <p><strong>${safeText(workOrder.task_type, 'Unspecified')}</strong></p>
+                            <p>Tree: ${safeText(workOrder.tree_id, 'Unassigned')}</p>
+                            <p>Cultivar: ${safeText(tree.variety, 'Unknown')}</p>
+                            <p>Status: ${safeText(formatWorkOrderStatus(workOrder.status), 'Unknown')}</p>
+                            <button onclick='viewWODetail(${JSON.stringify(String(workOrder.wo_id ?? ''))})' style="margin-top:8px;background:#c2410c;color:white;border:none;border-radius:8px;padding:6px 10px;font-weight:700;cursor:pointer;">Open Work Order</button>
+                        </div>
+                    `;
+                    marker.bindPopup(popupHtml);
+                    return marker;
+                });
             });
         }
 
@@ -2206,7 +2480,8 @@
         async function initializeApp() {
             await Promise.all([
                 fetchTrees(),
-                fetchLookupTables()
+                fetchLookupTables(),
+                fetchWorkOrders()
             ]);
         }
 
