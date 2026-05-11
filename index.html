@@ -25,6 +25,7 @@
             <nav class="flex gap-4 overflow-x-auto pb-2">
                 <button onclick="toggleMapView()" id="viewToggle" class="bg-emerald-700 px-4 py-2 rounded-lg text-sm font-bold shrink-0">Map View</button>
                 <button onclick="showPage('tree-list')" class="hover:underline shrink-0">Trees</button>
+                <button onclick="fetchRowHarvestLogs(); showPage('row-harvest-list')" class="hover:underline shrink-0">Row Harvests</button>
                 <button onclick="openMetricsPage()" class="hover:underline shrink-0">Metrics</button>
                 <button onclick="fetchFertigationLogs(); showPage('fertigation-list')" class="hover:underline shrink-0">Fertigation</button>
                 <button onclick="openAdminPage()" class="hover:underline shrink-0">Admin</button>
@@ -163,6 +164,7 @@
             <div class="my-4 space-y-1">
                 <p class="text-gray-600">Variety: <span id="td-variety" class="font-semibold text-gray-900"></span></p>
                 <p class="text-gray-600">Age: <span id="td-age" class="font-semibold text-gray-900"></span></p>
+                <p class="text-gray-600">Row: <span id="td-row" class="font-semibold text-gray-900"></span></p>
             </div>
 
             <div class="bg-emerald-50 rounded-xl p-4 my-6 border border-emerald-100">
@@ -191,7 +193,8 @@
             </div>
 
             <div class="space-y-3">
-                <button onclick="openHarvest(document.getElementById('td-id').innerText)" class="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-md">Log Harvest</button>
+                <button onclick="openHarvest(document.getElementById('td-id').innerText)" class="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-md">Log Tree Harvest</button>
+                <button onclick="openRowHarvestFromTree(document.getElementById('td-id').innerText)" class="w-full bg-emerald-100 text-emerald-900 py-4 rounded-xl font-bold shadow-sm border border-emerald-200">Log Row Harvest</button>
                 <button onclick="openPruning(document.getElementById('td-id').innerText)" class="w-full bg-sky-700 text-white py-4 rounded-xl font-bold shadow-md">Log Pruning</button>
                 <button onclick="openSessionForm('harvesting')" class="w-full bg-emerald-800 text-white py-3 rounded-xl font-bold shadow-md">Start Harvest Session</button>
                 <button onclick="openSessionForm('pruning')" class="w-full bg-sky-800 text-white py-3 rounded-xl font-bold shadow-md">Start Pruning Session</button>
@@ -234,6 +237,88 @@
                 <button type="submit" id="harvestSubmitBtn" class="w-full bg-emerald-600 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-emerald-700">Save Harvest</button>
                 <button type="button" onclick="showPage('tree-list')" class="w-full text-gray-500 mt-2">Cancel</button>
              </form>
+        </section>
+
+        <section id="row-harvest-list" class="page">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+                <div>
+                    <h2 class="text-2xl font-bold text-emerald-900">Row Harvest Logs</h2>
+                    <p class="text-sm text-gray-500">Track harvester runs by row while keeping tree-by-tree harvests available for special cases.</p>
+                </div>
+                <button onclick="openRowHarvestForm()" class="bg-emerald-700 text-white px-4 py-3 rounded-xl font-bold shadow-sm">Log Row Harvest</button>
+            </div>
+            <div class="mb-6">
+                <input type="text" id="rowHarvestSearch" oninput="filterRowHarvestLogs()" placeholder="Filter by field, row, or notes..." class="w-full p-4 rounded-xl border border-gray-300 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500">
+            </div>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50 border-b">
+                        <tr>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Date</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Field / Row</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Net Weight</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Avg / Tree</th>
+                            <th class="p-4 text-xs font-bold uppercase text-gray-500">Trees</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rowHarvestTableBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="row-harvest-form" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
+            <h2 class="text-xl font-bold mb-4 text-emerald-800">Log Row Harvest</h2>
+            <form id="rowHarvestForm" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Field</label>
+                    <select id="row_harvest_field" onchange="handleRowHarvestFieldChange()" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white">
+                        <option value="">Select a field...</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Row</label>
+                    <select id="row_harvest_row" onchange="handleRowHarvestRowChange()" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white">
+                        <option value="">Select a row...</option>
+                    </select>
+                </div>
+
+                <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                    <p class="text-sm text-emerald-800 font-semibold">Row Snapshot</p>
+                    <p class="text-sm text-emerald-900 mt-1">Trees in row: <span id="row-harvest-tree-count" class="font-bold">0</span></p>
+                    <p class="text-xs text-emerald-700 mt-1">Estimated average per tree is shown below. No individual tree harvest records will be created automatically.</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Harvest Date</label>
+                    <input type="date" id="row_harvest_date" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 bg-gray-50">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Gross Weight (kg)</label>
+                    <input type="number" step="0.01" id="row_gross_weight" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Leaf-to-Nut Ratio (0.0 to 1.0)</label>
+                    <input type="number" step="0.01" min="0" max="1" id="row_leaf_ratio" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500">
+                </div>
+
+                <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+                    <p class="text-sm text-emerald-800 font-semibold">Net Row Yield Estimate</p>
+                    <p class="text-2xl font-bold text-emerald-900"><span id="row_net_weight_display">0.00</span> kg</p>
+                    <p class="text-sm text-emerald-800 font-semibold mt-3">Estimated Average Per Tree</p>
+                    <p class="text-xl font-bold text-emerald-900"><span id="row_avg_per_tree_display">0.00</span> kg</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Notes (Optional)</label>
+                    <textarea id="row_harvest_notes" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500" rows="3" placeholder="Harvester notes, moisture, weather, anything unusual..."></textarea>
+                </div>
+
+                <button type="submit" id="rowHarvestSubmitBtn" class="w-full bg-emerald-700 text-white p-4 rounded-xl font-bold shadow-lg hover:bg-emerald-800">Save Row Harvest</button>
+                <button type="button" onclick="showPage('row-harvest-list')" class="w-full text-gray-500 mt-2">Cancel</button>
+            </form>
         </section>
 
         <section id="log-pruning" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
@@ -687,7 +772,7 @@
         const WORK_ORDER_PHOTO_BUCKET = 'work-order-photos';
         const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        let orchardData = [], workOrders = [], filteredWO = [], fertigationLogs = [], filteredFertigationLogs = [], activitySessions = [], filteredActivitySessions = [], fieldLookups = [], irrigationZoneLookups = [], fertiliserProducts = [], harvestMetricLogs = [], pruningMetricEvents = [], map, markers = [], workOrderMarkers = [];
+        let orchardData = [], workOrders = [], filteredWO = [], fertigationLogs = [], filteredFertigationLogs = [], rowHarvestLogs = [], filteredRowHarvestLogs = [], activitySessions = [], filteredActivitySessions = [], fieldLookups = [], irrigationZoneLookups = [], fertiliserProducts = [], harvestMetricLogs = [], pruningMetricEvents = [], map, markers = [], workOrderMarkers = [];
         let harvestedThisYear = new Set(), prunedThisYear = new Set(), activeHarvestFilter = 'all', activePruningFilter = 'all';
         let activeMapHarvestFilter = 'all', activeMapPruningFilter = 'all';
         let activeVarietyFilters = new Set();
@@ -800,6 +885,8 @@
         const ratioInput = document.getElementById('leaf_ratio');
         const netDisplay = document.getElementById('net_weight_display');
         const pruningDateInput = document.getElementById('pruning_date');
+        const rowGrossInput = document.getElementById('row_gross_weight');
+        const rowRatioInput = document.getElementById('row_leaf_ratio');
 
         function calculateNet() {
             const gross = parseFloat(grossInput.value) || 0;
@@ -808,8 +895,20 @@
             netDisplay.innerText = net.toFixed(2);
         }
 
+        function calculateRowHarvestNet() {
+            const gross = parseFloat(rowGrossInput.value) || 0;
+            const ratio = parseFloat(rowRatioInput.value) || 0;
+            const treeCount = Number(document.getElementById('row-harvest-tree-count').innerText) || 0;
+            const net = gross * (1 - ratio);
+            const avgPerTree = treeCount > 0 ? net / treeCount : 0;
+            document.getElementById('row_net_weight_display').innerText = net.toFixed(2);
+            document.getElementById('row_avg_per_tree_display').innerText = avgPerTree.toFixed(2);
+        }
+
         grossInput.addEventListener('input', calculateNet);
         ratioInput.addEventListener('input', calculateNet);
+        rowGrossInput.addEventListener('input', calculateRowHarvestNet);
+        rowRatioInput.addEventListener('input', calculateRowHarvestNet);
 
         function showPage(pageId) {
             if (pageId !== 'work-order') {
@@ -939,6 +1038,34 @@
             `).join('');
         }
 
+        function getTreeRowValue(tree) {
+            const rowValue = tree?.row_number ?? tree?.row_name ?? '';
+            return String(rowValue).trim();
+        }
+
+        function getAvailableHarvestRows() {
+            return orchardData.reduce((rows, tree) => {
+                const fieldName = String(tree.field_name ?? '').trim();
+                const rowValue = getTreeRowValue(tree);
+                if (!fieldName || !rowValue) return rows;
+                const key = `${fieldName}|||${rowValue}`;
+                if (!rows.some(item => item.key === key)) {
+                    rows.push({
+                        key,
+                        field_name: fieldName,
+                        row_value: rowValue,
+                        tree_count: orchardData.filter(candidate =>
+                            String(candidate.field_name ?? '').trim() === fieldName &&
+                            getTreeRowValue(candidate) === rowValue
+                        ).length
+                    });
+                }
+                return rows;
+            }, []).sort((a, b) =>
+                a.field_name.localeCompare(b.field_name) || a.row_value.localeCompare(b.row_value, undefined, { numeric: true })
+            );
+        }
+
         async function fetchTrees() {
             const { data, error } = await _supabase.from('trees').select('*').order('tree_id');
             if (error) console.error('Error fetching trees:', error);
@@ -973,6 +1100,26 @@
             fertigationLogs = data || [];
             filteredFertigationLogs = [...fertigationLogs];
             renderFertigationLogs();
+        }
+
+        async function fetchRowHarvestLogs() {
+            const { data, error } = await _supabase
+                .from('row_harvest_logs')
+                .select('*')
+                .order('harvest_date', { ascending: false })
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.error('Error fetching row harvest logs:', error);
+                rowHarvestLogs = [];
+                filteredRowHarvestLogs = [];
+                renderRowHarvestLogs();
+                return;
+            }
+
+            rowHarvestLogs = data || [];
+            filteredRowHarvestLogs = [...rowHarvestLogs];
+            renderRowHarvestLogs();
         }
 
         async function fetchLookupTables() {
@@ -1662,6 +1809,111 @@
             showPage('fertigation-form');
         }
 
+        function populateRowHarvestFieldOptions(selectedField = '') {
+            const select = document.getElementById('row_harvest_field');
+            const fields = [...new Set(getAvailableHarvestRows().map(row => row.field_name))];
+            select.innerHTML = ['<option value="">Select a field...</option>']
+                .concat(fields.map(fieldName => `<option value="${escapeHtml(fieldName)}">${safeText(fieldName, 'Unknown field')}</option>`))
+                .join('');
+            if (fields.includes(selectedField)) {
+                select.value = selectedField;
+            }
+        }
+
+        function populateRowHarvestRowOptions(selectedRow = '') {
+            const fieldName = document.getElementById('row_harvest_field').value;
+            const select = document.getElementById('row_harvest_row');
+            const rows = getAvailableHarvestRows().filter(row => row.field_name === fieldName);
+            select.innerHTML = ['<option value="">Select a row...</option>']
+                .concat(rows.map(row => `<option value="${escapeHtml(row.row_value)}">${safeText(row.row_value, 'Unknown row')} (${row.tree_count} trees)</option>`))
+                .join('');
+            if (rows.some(row => row.row_value === selectedRow)) {
+                select.value = selectedRow;
+            }
+            select.disabled = rows.length === 0;
+        }
+
+        function updateRowHarvestTreeCount() {
+            const fieldName = document.getElementById('row_harvest_field').value;
+            const rowValue = document.getElementById('row_harvest_row').value;
+            const selectedRow = getAvailableHarvestRows().find(row => row.field_name === fieldName && row.row_value === rowValue);
+            document.getElementById('row-harvest-tree-count').innerText = selectedRow ? selectedRow.tree_count : '0';
+            calculateRowHarvestNet();
+        }
+
+        function handleRowHarvestFieldChange() {
+            populateRowHarvestRowOptions();
+            updateRowHarvestTreeCount();
+        }
+
+        function handleRowHarvestRowChange() {
+            updateRowHarvestTreeCount();
+        }
+
+        function openRowHarvestForm(fieldName = '', rowValue = '') {
+            document.getElementById('rowHarvestForm').reset();
+            document.getElementById('row_harvest_date').value = getLocalDateInputValue();
+            document.getElementById('row-harvest-tree-count').innerText = '0';
+            document.getElementById('row_net_weight_display').innerText = '0.00';
+            document.getElementById('row_avg_per_tree_display').innerText = '0.00';
+            populateRowHarvestFieldOptions(fieldName);
+            populateRowHarvestRowOptions(rowValue);
+            if (fieldName) document.getElementById('row_harvest_field').value = fieldName;
+            if (rowValue) document.getElementById('row_harvest_row').value = rowValue;
+            updateRowHarvestTreeCount();
+            showPage('row-harvest-form');
+        }
+
+        function openRowHarvestFromTree(treeId) {
+            const tree = orchardData.find(item => String(item.tree_id) === String(treeId));
+            if (!tree) return;
+            const fieldName = String(tree.field_name ?? '').trim();
+            const rowValue = getTreeRowValue(tree);
+            if (!fieldName || !rowValue) {
+                alert('This tree does not have a field/row assigned yet, so a row harvest cannot be prefilled.');
+                openRowHarvestForm();
+                return;
+            }
+            openRowHarvestForm(fieldName, rowValue);
+        }
+
+        function renderRowHarvestLogs() {
+            const tbody = document.getElementById('rowHarvestTableBody');
+            if (!tbody) return;
+            if (!filteredRowHarvestLogs.length) {
+                tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-sm text-gray-400">No row harvest logs found.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = filteredRowHarvestLogs.map(log => {
+                const netWeight = Number(log.net_nut_weight_kg) || ((Number(log.gross_weight_kg) || 0) * (1 - (Number(log.leaf_to_nut_ratio) || 0)));
+                const treeCount = Number(log.tree_count_at_harvest) || 0;
+                const avgPerTree = treeCount > 0 ? netWeight / treeCount : 0;
+                return `
+                    <tr class="border-b">
+                        <td class="p-4 text-sm text-gray-700">${safeText(formatDisplayDate(log.harvest_date), 'No date')}</td>
+                        <td class="p-4">
+                            <p class="font-semibold text-gray-900">${safeText(log.field_name, 'Unknown field')}</p>
+                            <p class="text-xs text-gray-500 uppercase">Row ${safeText(log.row_number, 'Unknown')}</p>
+                        </td>
+                        <td class="p-4 text-sm text-gray-700">${safeText(netWeight.toFixed(2) + ' kg', '0.00 kg')}</td>
+                        <td class="p-4 text-sm text-gray-700">${safeText(avgPerTree.toFixed(2) + ' kg', '0.00 kg')}</td>
+                        <td class="p-4 text-sm text-gray-700">${safeText(String(treeCount), '0')}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function filterRowHarvestLogs() {
+            const term = document.getElementById('rowHarvestSearch').value.toLowerCase();
+            filteredRowHarvestLogs = rowHarvestLogs.filter(log =>
+                String(log.field_name ?? '').toLowerCase().includes(term) ||
+                String(log.row_number ?? '').toLowerCase().includes(term) ||
+                String(log.notes ?? '').toLowerCase().includes(term)
+            );
+            renderRowHarvestLogs();
+        }
+
         function openAdminPage() {
             populateAdminZoneFieldOptions();
             renderAdminLookups();
@@ -2140,6 +2392,7 @@
             document.getElementById('td-id').innerText = tree.tree_id;
             document.getElementById('td-field').innerText = tree.field_name || 'No Field Assigned';
             document.getElementById('td-variety').innerText = tree.variety || 'N/A';
+            document.getElementById('td-row').innerText = getTreeRowValue(tree) || 'Unknown';
             
             if (tree.date_of_planting) {
                 const years = Math.abs(new Date(Date.now() - new Date(tree.date_of_planting).getTime()).getUTCFullYear() - 1970);
@@ -2256,6 +2509,70 @@
                 btn.disabled = false;
                 btn.innerText = 'Save Harvest';
                 fetchTrees();
+            }
+        };
+
+        document.getElementById('rowHarvestForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('rowHarvestSubmitBtn');
+            const fieldName = document.getElementById('row_harvest_field').value;
+            const rowValue = document.getElementById('row_harvest_row').value;
+            const harvestDate = document.getElementById('row_harvest_date').value;
+            const gross = parseFloat(rowGrossInput.value);
+            const ratio = parseFloat(rowRatioInput.value);
+            const treeCount = Number(document.getElementById('row-harvest-tree-count').innerText) || 0;
+            const netWeight = gross * (1 - ratio);
+
+            if (!fieldName || !rowValue) {
+                alert('Please choose both a field and a row.');
+                return;
+            }
+            if (!harvestDate) {
+                alert('Please choose a harvest date.');
+                return;
+            }
+            if (treeCount <= 0) {
+                alert('This row does not currently have any trees assigned.');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = 'Saving...';
+
+            const activeSession = await fetchActiveSession('harvesting');
+            const payload = {
+                field_name: fieldName,
+                row_number: rowValue,
+                tree_count_at_harvest: treeCount,
+                harvest_date: harvestDate,
+                gross_weight_kg: gross,
+                leaf_to_nut_ratio: ratio,
+                net_nut_weight_kg: netWeight,
+                notes: document.getElementById('row_harvest_notes').value.trim(),
+                created_at: new Date().toISOString()
+            };
+            if (activeSession) payload.session_id = activeSession.session_id;
+
+            let { error } = await _supabase.from('row_harvest_logs').insert([payload]);
+            if (error && String(error.message || '').toLowerCase().includes('session_id')) {
+                delete payload.session_id;
+                ({ error } = await _supabase.from('row_harvest_logs').insert([payload]));
+            }
+
+            if (error) {
+                alert('Error: ' + error.message);
+                btn.disabled = false;
+                btn.innerText = 'Save Row Harvest';
+            } else {
+                alert(`Row harvest logged for ${fieldName} row ${rowValue}. Estimated average per tree: ${(netWeight / treeCount).toFixed(2)} kg.`);
+                e.target.reset();
+                document.getElementById('row-harvest-tree-count').innerText = '0';
+                document.getElementById('row_net_weight_display').innerText = '0.00';
+                document.getElementById('row_avg_per_tree_display').innerText = '0.00';
+                btn.disabled = false;
+                btn.innerText = 'Save Row Harvest';
+                await fetchRowHarvestLogs();
+                showPage('row-harvest-list');
             }
         };
 
@@ -2905,7 +3222,8 @@
             await Promise.all([
                 fetchTrees(),
                 fetchLookupTables(),
-                fetchWorkOrders()
+                fetchWorkOrders(),
+                fetchRowHarvestLogs()
             ]);
         }
 
