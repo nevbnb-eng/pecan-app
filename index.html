@@ -411,6 +411,39 @@
                     <div id="metrics-session-hours" class="mt-4 space-y-3"></div>
                 </section>
             </div>
+
+            <div class="grid gap-4 lg:grid-cols-2 mt-6">
+                <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <h3 class="text-lg font-bold text-emerald-900">Yearly Harvest Totals</h3>
+                    <div id="metrics-yearly-harvest" class="mt-4 space-y-3"></div>
+                </section>
+                <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <h3 class="text-lg font-bold text-emerald-900">Harvest This Year by Month</h3>
+                    <div id="metrics-harvest-by-month" class="mt-4 space-y-3"></div>
+                </section>
+            </div>
+
+            <div class="grid gap-4 lg:grid-cols-2 mt-6">
+                <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <h3 class="text-lg font-bold text-emerald-900">Pruning Completion by Cultivar</h3>
+                    <div id="metrics-pruning-by-cultivar" class="mt-4 space-y-3"></div>
+                </section>
+                <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <h3 class="text-lg font-bold text-emerald-900">Open Work Orders by Field</h3>
+                    <div id="metrics-open-workorders-by-field" class="mt-4 space-y-3"></div>
+                </section>
+            </div>
+
+            <div class="grid gap-4 lg:grid-cols-2 mt-6">
+                <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <h3 class="text-lg font-bold text-emerald-900">Fertigation Applications by Product</h3>
+                    <div id="metrics-fertigation-by-product" class="mt-4 space-y-3"></div>
+                </section>
+                <section class="bg-white border border-gray-200 rounded-2xl shadow-sm p-5">
+                    <h3 class="text-lg font-bold text-emerald-900">Session Hours by Month</h3>
+                    <div id="metrics-session-hours-by-month" class="mt-4 space-y-3"></div>
+                </section>
+            </div>
         </section>
 
         <section id="session-list" class="page">
@@ -620,14 +653,22 @@
                     <textarea id="work-instructions" required class="w-full p-3 border rounded-lg" rows="4"></textarea>
                 </div>
                 <div>
-                    <label class="block text-sm font-medium">Upload Photo (Optional)</label>
-                    <input type="file" id="work-photo-file" accept="image/*" onchange="handleWorkPhotoInputChange()" class="w-full p-3 border rounded-lg bg-white">
-                    <p class="text-xs text-gray-400 mt-1">Choose a phone photo or image file to upload to Supabase Storage.</p>
+                    <label class="block text-sm font-medium">Take Photo (Optional)</label>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" id="work-photo-open-camera-btn" onclick="startWorkPhotoCamera()" class="bg-orange-100 text-orange-800 px-4 py-3 rounded-xl font-bold">Open Camera</button>
+                        <button type="button" id="work-photo-capture-btn" onclick="captureWorkPhoto()" class="hidden bg-orange-600 text-white px-4 py-3 rounded-xl font-bold">Capture Photo</button>
+                        <button type="button" id="work-photo-retake-btn" onclick="retakeWorkPhotoCamera()" class="hidden bg-gray-100 text-gray-700 px-4 py-3 rounded-xl font-bold">Retake</button>
+                    </div>
+                    <div id="work-photo-camera-panel" class="hidden mt-3 border border-orange-100 rounded-xl p-3 bg-orange-50">
+                        <video id="work-photo-video" autoplay playsinline muted class="w-full h-56 object-cover rounded-lg bg-black"></video>
+                        <p id="work-photo-camera-caption" class="text-xs text-orange-800 mt-2">Line up the work area and tap capture when ready.</p>
+                    </div>
+                    <canvas id="work-photo-canvas" class="hidden"></canvas>
                 </div>
                 <div>
                     <label class="block text-sm font-medium">Photo URL (Optional Fallback)</label>
                     <input type="url" id="work-photo-url" oninput="handleWorkPhotoUrlChange()" placeholder="https://..." class="w-full p-3 border rounded-lg">
-                    <p class="text-xs text-gray-400 mt-1">If no file is chosen, this direct image link will be used instead.</p>
+                    <p class="text-xs text-gray-400 mt-1">If you cannot use the camera on this device, this direct image link will be used instead.</p>
                 </div>
                 <div id="work-photo-preview-panel" class="hidden border border-orange-100 rounded-xl p-3 bg-orange-50">
                     <p class="text-sm font-semibold text-orange-900 mb-2">Photo Preview</p>
@@ -635,7 +676,7 @@
                     <p id="work-photo-preview-caption" class="text-xs text-orange-800 mt-2"></p>
                 </div>
                 <button type="submit" id="woSubmitBtn" class="w-full bg-orange-600 text-white p-4 rounded-xl font-bold">Submit Work Order</button>
-                <button type="button" onclick="showPage('tree-list')" class="w-full text-gray-500 mt-2">Cancel</button>
+                <button type="button" onclick="closeWorkOrderForm()" class="w-full text-gray-500 mt-2">Cancel</button>
             </form>
         </section>
     </main>
@@ -654,6 +695,7 @@
         let activeMapWorkOrderTypeFilters = new Set();
         let pendingLocationMarker = null, pendingLocation = null;
         let currentUserLocationMarker = null;
+        let workPhotoStream = null, workPhotoFile = null, workPhotoPreviewUrl = '';
 
         function escapeHtml(value) {
             return String(value ?? '')
@@ -770,6 +812,9 @@
         ratioInput.addEventListener('input', calculateNet);
 
         function showPage(pageId) {
+            if (pageId !== 'work-order') {
+                stopWorkPhotoCamera();
+            }
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.getElementById(pageId).classList.add('active');
             if (pageId === 'map-view' && map) setTimeout(() => map.invalidateSize(), 200);
@@ -803,6 +848,57 @@
             const gross = Number(log.gross_weight_kg) || 0;
             const ratio = Number(log.leaf_to_nut_ratio) || 0;
             return gross * (1 - ratio);
+        }
+
+        function setWorkPhotoPreview(previewUrl, captionText) {
+            const panel = document.getElementById('work-photo-preview-panel');
+            const image = document.getElementById('work-photo-preview');
+            const caption = document.getElementById('work-photo-preview-caption');
+
+            if (!previewUrl) {
+                panel.classList.add('hidden');
+                image.removeAttribute('src');
+                caption.innerText = '';
+                return;
+            }
+
+            image.src = previewUrl;
+            caption.innerText = captionText || '';
+            panel.classList.remove('hidden');
+        }
+
+        function revokeWorkPhotoPreviewUrl() {
+            if (workPhotoPreviewUrl && workPhotoPreviewUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(workPhotoPreviewUrl);
+            }
+            workPhotoPreviewUrl = '';
+        }
+
+        function stopWorkPhotoCamera() {
+            if (workPhotoStream) {
+                workPhotoStream.getTracks().forEach(track => track.stop());
+                workPhotoStream = null;
+            }
+            const video = document.getElementById('work-photo-video');
+            if (video) video.srcObject = null;
+            document.getElementById('work-photo-camera-panel').classList.add('hidden');
+            document.getElementById('work-photo-capture-btn').classList.add('hidden');
+        }
+
+        function resetWorkPhotoState(options = {}) {
+            const { preserveUrl = false } = options;
+            stopWorkPhotoCamera();
+            revokeWorkPhotoPreviewUrl();
+            workPhotoFile = null;
+            if (!preserveUrl) {
+                document.getElementById('work-photo-url').value = '';
+            }
+            document.getElementById('work-photo-retake-btn').classList.add('hidden');
+            document.getElementById('work-photo-open-camera-btn').classList.remove('hidden');
+            setWorkPhotoPreview('', '');
+            if (preserveUrl) {
+                handleWorkPhotoUrlChange();
+            }
         }
 
         function renderMetricBarList(containerId, items, formatter) {
@@ -966,6 +1062,7 @@
 
         function renderMetricsPage() {
             const { label } = getCurrentYearRange();
+            const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
             const treeById = new Map(orchardData.map(tree => [String(tree.tree_id ?? ''), tree]));
             const harvestThisYear = harvestMetricLogs.filter(log => {
                 const sourceDate = log.harvest_date || log.created_at;
@@ -981,11 +1078,20 @@
             const totalSessionHours = completedSessions.reduce((sum, session) => sum + ((Number(session.duration_minutes) || 0) / 60), 0);
             const totalHarvestKg = harvestThisYear.reduce((sum, log) => sum + getHarvestNetWeight(log), 0);
             const totalApplications = fertigationLogs.length;
+            const harvestPendingCount = orchardData.length - harvestedThisYear.size;
+            const pruningPendingCount = orchardData.length - prunedThisYear.size;
+            const averageHarvestKg = harvestThisYear.length ? totalHarvestKg / harvestThisYear.length : 0;
+            const totalPruningEvents = pruningThisYear.length;
+            const workOrdersWithPhotos = workOrders.filter(wo => Boolean(getSafeExternalUrl(wo.photo_url))).length;
 
             renderMetricsSummaryCards([
                 { label: 'Trees', value: String(orchardData.length), helper: `${harvestedThisYear.size} harvested and ${prunedThisYear.size} pruned in ${label}` },
                 { label: 'Harvest This Year', value: `${totalHarvestKg.toFixed(2)} kg`, helper: `${harvestThisYear.length} harvest logs in ${label}` },
-                { label: 'Open Work Orders', value: String(openWorkOrders.length), helper: `${workOrders.length} total work orders tracked` },
+                { label: 'Avg Harvest Size', value: `${averageHarvestKg.toFixed(2)} kg`, helper: 'Average net weight per harvest log this year' },
+                { label: 'Harvest Pending', value: String(harvestPendingCount), helper: `${orchardData.length ? ((harvestPendingCount / orchardData.length) * 100).toFixed(1) : '0.0'}% of trees not yet harvested this year` },
+                { label: 'Pruned This Year', value: String(prunedThisYear.size), helper: `${totalPruningEvents} pruning events logged in ${label}` },
+                { label: 'Pruning Pending', value: String(pruningPendingCount), helper: `${orchardData.length ? ((pruningPendingCount / orchardData.length) * 100).toFixed(1) : '0.0'}% of trees still pending pruning` },
+                { label: 'Open Work Orders', value: String(openWorkOrders.length), helper: `${workOrders.length} total work orders, ${workOrdersWithPhotos} with photos` },
                 { label: 'Session Hours', value: `${totalSessionHours.toFixed(1)} h`, helper: `${activeSessions.length} active sessions, ${completedSessions.length} completed` }
             ]);
 
@@ -1040,12 +1146,79 @@
                 .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
                 .map(([labelText, value]) => ({ label: labelText, value }));
 
+            const yearlyHarvestTotals = Object.entries(harvestMetricLogs.reduce((acc, log) => {
+                const sourceDate = log.harvest_date || log.created_at;
+                if (!sourceDate) return acc;
+                const year = new Date(sourceDate).getFullYear();
+                acc[year] = (acc[year] || 0) + getHarvestNetWeight(log);
+                return acc;
+            }, {}))
+                .sort((a, b) => Number(b[0]) - Number(a[0]))
+                .map(([labelText, value]) => ({ label: String(labelText), value }));
+
+            const harvestByMonth = monthLabels.map((monthLabel, index) => {
+                const value = harvestThisYear
+                    .filter(log => {
+                        const sourceDate = log.harvest_date || log.created_at;
+                        return sourceDate && new Date(sourceDate).getMonth() === index;
+                    })
+                    .reduce((sum, log) => sum + getHarvestNetWeight(log), 0);
+                return { label: monthLabel, value };
+            });
+
+            const pruningByCultivar = Object.entries(orchardData.reduce((acc, tree) => {
+                const cultivar = String(tree.variety ?? 'Unknown cultivar');
+                if (!acc[cultivar]) acc[cultivar] = { total: 0, pruned: 0 };
+                acc[cultivar].total += 1;
+                if (prunedThisYear.has(String(tree.tree_id ?? ''))) {
+                    acc[cultivar].pruned += 1;
+                }
+                return acc;
+            }, {}))
+                .sort((a, b) => b[1].pruned - a[1].pruned || a[0].localeCompare(b[0]))
+                .map(([cultivar, details]) => ({
+                    label: cultivar,
+                    value: details.pruned,
+                    meta: `${details.pruned} pruned | ${details.total - details.pruned} pending`
+                }));
+
+            const openWorkOrdersByField = Object.entries(openWorkOrders.reduce((acc, wo) => {
+                const tree = treeById.get(String(wo.tree_id ?? ''));
+                const field = String(tree?.field_name ?? 'No Field');
+                acc[field] = (acc[field] || 0) + 1;
+                return acc;
+            }, {}))
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .map(([labelText, value]) => ({ label: labelText, value }));
+
+            const fertigationByProduct = Object.entries(fertigationLogs.reduce((acc, log) => {
+                const product = String(log.product_name ?? 'Unknown product');
+                acc[product] = (acc[product] || 0) + 1;
+                return acc;
+            }, {}))
+                .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+                .slice(0, 10)
+                .map(([labelText, value]) => ({ label: labelText, value }));
+
+            const sessionHoursByMonth = monthLabels.map((monthLabel, index) => {
+                const value = completedSessions
+                    .filter(session => new Date(session.started_at).getMonth() === index && new Date(session.started_at).getFullYear() === label)
+                    .reduce((sum, session) => sum + ((Number(session.duration_minutes) || 0) / 60), 0);
+                return { label: monthLabel, value };
+            });
+
             renderMetricBarList('metrics-harvest-by-field', harvestByField, value => `${Number(value).toFixed(2)} kg`);
             renderMetricBarList('metrics-harvest-by-cultivar', harvestByCultivar, value => `${Number(value).toFixed(2)} kg`);
             renderMetricBarList('metrics-workorders-by-type', workOrdersByType, value => `${value}`);
             renderMetricBarList('metrics-workorders-by-cultivar', workOrdersByCultivar, value => `${value}`);
             renderMetricBarList('metrics-fertigation-by-type', fertigationByType, value => `${value}`);
             renderMetricBarList('metrics-session-hours', sessionHoursByActivity, value => `${Number(value).toFixed(1)} h`);
+            renderMetricBarList('metrics-yearly-harvest', yearlyHarvestTotals, value => `${Number(value).toFixed(2)} kg`);
+            renderMetricBarList('metrics-harvest-by-month', harvestByMonth, value => `${Number(value).toFixed(2)} kg`);
+            renderMetricBarList('metrics-pruning-by-cultivar', pruningByCultivar, value => `${value}`);
+            renderMetricBarList('metrics-open-workorders-by-field', openWorkOrdersByField, value => `${value}`);
+            renderMetricBarList('metrics-fertigation-by-product', fertigationByProduct, value => `${value}`);
+            renderMetricBarList('metrics-session-hours-by-month', sessionHoursByMonth, value => `${Number(value).toFixed(1)} h`);
         }
 
         async function fetchHarvestStatusThisYear() {
@@ -1833,47 +2006,75 @@
 
         function handleWorkPhotoUrlChange() {
             const photoUrl = getSafeExternalUrl(document.getElementById('work-photo-url').value);
-            const fileInput = document.getElementById('work-photo-file');
-            const panel = document.getElementById('work-photo-preview-panel');
-            const image = document.getElementById('work-photo-preview');
-            const caption = document.getElementById('work-photo-preview-caption');
-
-            if (fileInput.files && fileInput.files.length > 0) {
+            if (workPhotoFile) {
                 return;
             }
 
             if (!photoUrl) {
-                panel.classList.add('hidden');
-                image.removeAttribute('src');
-                caption.innerText = '';
+                setWorkPhotoPreview('', '');
                 return;
             }
 
-            image.src = photoUrl;
-            caption.innerText = 'Previewing direct image URL.';
-            panel.classList.remove('hidden');
+            setWorkPhotoPreview(photoUrl, 'Previewing direct image URL.');
         }
 
-        function handleWorkPhotoInputChange() {
-            const fileInput = document.getElementById('work-photo-file');
-            const urlInput = document.getElementById('work-photo-url');
-            const panel = document.getElementById('work-photo-preview-panel');
-            const image = document.getElementById('work-photo-preview');
-            const caption = document.getElementById('work-photo-preview-caption');
-            const file = fileInput.files && fileInput.files[0];
-
-            if (!file) {
-                handleWorkPhotoUrlChange();
+        async function startWorkPhotoCamera() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert('Camera capture is not supported on this device/browser. You can still use the Photo URL field.');
                 return;
             }
 
-            image.src = URL.createObjectURL(file);
-            caption.innerText = `Selected file: ${file.name}`;
-            panel.classList.remove('hidden');
+            try {
+                stopWorkPhotoCamera();
+                workPhotoStream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: { facingMode: { ideal: 'environment' } }
+                });
 
-            if (urlInput.value.trim()) {
-                caption.innerText += ' (uploaded file will be used instead of the URL)';
+                const video = document.getElementById('work-photo-video');
+                video.srcObject = workPhotoStream;
+                await video.play();
+                document.getElementById('work-photo-camera-panel').classList.remove('hidden');
+                document.getElementById('work-photo-capture-btn').classList.remove('hidden');
+                document.getElementById('work-photo-retake-btn').classList.add('hidden');
+            } catch (error) {
+                alert('Unable to open the camera: ' + (error.message || error));
             }
+        }
+
+        async function captureWorkPhoto() {
+            const video = document.getElementById('work-photo-video');
+            const canvas = document.getElementById('work-photo-canvas');
+            if (!video.videoWidth || !video.videoHeight) {
+                alert('The camera is not ready yet. Please try again in a moment.');
+                return;
+            }
+
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+            if (!blob) {
+                alert('Could not capture the photo. Please try again.');
+                return;
+            }
+
+            revokeWorkPhotoPreviewUrl();
+            workPhotoFile = new File([blob], `work-order-${Date.now()}.jpg`, { type: 'image/jpeg' });
+            workPhotoPreviewUrl = URL.createObjectURL(workPhotoFile);
+            setWorkPhotoPreview(workPhotoPreviewUrl, 'Captured photo will be uploaded with this work order.');
+            stopWorkPhotoCamera();
+            document.getElementById('work-photo-retake-btn').classList.remove('hidden');
+            document.getElementById('work-photo-open-camera-btn').classList.add('hidden');
+        }
+
+        function retakeWorkPhotoCamera() {
+            revokeWorkPhotoPreviewUrl();
+            workPhotoFile = null;
+            setWorkPhotoPreview('', '');
+            startWorkPhotoCamera();
         }
 
         function renderActivitySessions() {
@@ -2309,7 +2510,7 @@
             const btn = document.getElementById('woSubmitBtn');
             const treeId = document.getElementById('work-id-internal').value;
             const fallbackPhotoUrl = getSafeExternalUrl(document.getElementById('work-photo-url').value);
-            const photoFile = document.getElementById('work-photo-file').files[0];
+            const photoFile = workPhotoFile;
             
             btn.disabled = true;
             btn.innerText = 'Submitting...';
@@ -2344,7 +2545,7 @@
             } else {
                 alert('Work order created!');
                 e.target.reset();
-                handleWorkPhotoUrlChange();
+                resetWorkPhotoState();
                 showPage('tree-list');
                 btn.disabled = false;
                 btn.innerText = 'Submit Work Order';
@@ -2687,11 +2888,16 @@
             }, (err) => alert(err.message), { enableHighAccuracy: true });
         }
 
+        function closeWorkOrderForm() {
+            resetWorkPhotoState();
+            showPage('tree-list');
+        }
+
         function openWorkOrder(id) {
             document.getElementById('workForm').reset();
+            resetWorkPhotoState();
             document.getElementById('work-tree-id').innerText = id;
             document.getElementById('work-id-internal').value = id;
-            handleWorkPhotoUrlChange();
             showPage('work-order');
         }
 
