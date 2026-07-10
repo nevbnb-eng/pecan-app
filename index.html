@@ -586,10 +586,54 @@
             <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
                 <div>
                     <h2 class="text-2xl font-bold text-emerald-900">Admin</h2>
-                    <p class="text-sm text-gray-500">Manage lookup tables used by fertigation and reporting.</p>
+                    <p class="text-sm text-gray-500">Manage tree identity and lookup tables used by orchard operations and reporting.</p>
                 </div>
                 <button onclick="refreshAdminData()" class="bg-emerald-700 text-white px-4 py-3 rounded-xl font-bold shadow-sm">Refresh Admin Data</button>
             </div>
+
+            <section class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mb-6">
+                <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-emerald-900">Tree Tags</h3>
+                        <p class="text-sm text-gray-500">Edit the visible orchard tag without changing the legacy internal `tree_id` relationships.</p>
+                    </div>
+                </div>
+                <div class="grid gap-6 lg:grid-cols-[minmax(320px,380px)_1fr]">
+                    <form id="adminTreeForm" class="space-y-4">
+                        <input type="hidden" id="admin_tree_id">
+                        <div>
+                            <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Backend Serial</label>
+                            <input type="text" id="admin_tree_serial" readonly class="w-full p-3 border rounded-lg bg-gray-50 text-gray-700">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Legacy Internal Tree ID</label>
+                            <input type="text" id="admin_tree_legacy_id" readonly class="w-full p-3 border rounded-lg bg-gray-50 text-gray-700">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Visible Tree Tag</label>
+                            <input type="text" id="admin_tree_tag" required class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-emerald-500" placeholder="e.g. North-04-018">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Field</label>
+                                <input type="text" id="admin_tree_field" readonly class="w-full p-3 border rounded-lg bg-gray-50 text-gray-700">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Row / Column</label>
+                                <input type="text" id="admin_tree_row_column" readonly class="w-full p-3 border rounded-lg bg-gray-50 text-gray-700">
+                            </div>
+                        </div>
+                        <button type="submit" id="adminTreeSubmitBtn" class="w-full bg-emerald-700 text-white p-3 rounded-xl font-bold">Save Tree Tag</button>
+                        <button type="button" id="adminTreeCancelBtn" onclick="resetAdminTreeForm()" class="hidden w-full bg-gray-100 text-gray-700 p-3 rounded-xl font-bold">Cancel Edit</button>
+                    </form>
+                    <div>
+                        <div class="mb-4">
+                            <input type="text" id="adminTreeSearch" oninput="renderAdminTrees()" placeholder="Search by tag, serial, field, variety, legacy ID..." class="w-full p-4 rounded-xl border border-gray-300 shadow-sm outline-none focus:ring-2 focus:ring-emerald-500">
+                        </div>
+                        <div id="admin-trees-list" class="space-y-2 text-sm text-gray-700 max-h-[36rem] overflow-y-auto pr-1"></div>
+                    </div>
+                </div>
+            </section>
 
             <div class="grid gap-6 lg:grid-cols-3">
                 <section class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
@@ -1060,8 +1104,34 @@
             return serial == null || serial === '' ? 'Not assigned' : String(serial);
         }
 
+        function getTreeSerialValue(treeOrId) {
+            const tree = typeof treeOrId === 'string' ? findTreeById(treeOrId) : treeOrId;
+            const serial = tree?.tree_serial;
+            return serial == null || serial === '' ? null : Number(serial);
+        }
+
         function findTreeById(treeId) {
             return orchardData.find(tree => String(tree.tree_id ?? '') === String(treeId ?? '')) || null;
+        }
+
+        function getTreeReferenceKey(treeSerial, treeId) {
+            if (treeSerial != null && treeSerial !== '') {
+                return `serial:${Number(treeSerial)}`;
+            }
+            const legacyId = String(treeId ?? '').trim();
+            return legacyId ? `id:${legacyId}` : '';
+        }
+
+        function getTreeRecordKey(tree) {
+            return getTreeReferenceKey(tree?.tree_serial, tree?.tree_id);
+        }
+
+        function findTreeByReference(treeSerial, treeId) {
+            if (treeSerial != null && treeSerial !== '') {
+                const matchedBySerial = orchardData.find(tree => Number(tree.tree_serial) === Number(treeSerial));
+                if (matchedBySerial) return matchedBySerial;
+            }
+            return findTreeById(treeId);
         }
 
         function getAvailableHarvestRows() {
@@ -1091,6 +1161,7 @@
             const { data, error } = await _supabase.from('trees').select('*').order('tree_id');
             if (error) console.error('Error fetching trees:', error);
             orchardData = data || [];
+            renderAdminTrees();
             syncVarietyFilters();
             renderVarietyFilters();
             await fetchHarvestStatusThisYear();
@@ -1190,7 +1261,7 @@
         async function fetchMetricHarvestLogs() {
             const { data, error } = await _supabase
                 .from('harvest_logs')
-                .select('tree_id, net_nut_weight_kg, gross_weight_kg, leaf_to_nut_ratio, harvest_date, created_at');
+                .select('tree_id, tree_serial, net_nut_weight_kg, gross_weight_kg, leaf_to_nut_ratio, harvest_date, created_at');
 
             if (error) {
                 console.error('Error fetching metric harvest logs:', error);
@@ -1204,7 +1275,7 @@
         async function fetchMetricPruningEvents() {
             const { data, error } = await _supabase
                 .from('pruning_events')
-                .select('tree_id, pruned_at, created_at');
+                .select('tree_id, tree_serial, pruned_at, created_at');
 
             if (error) {
                 console.error('Error fetching metric pruning events:', error);
@@ -1231,7 +1302,7 @@
         function renderMetricsPage() {
             const { label } = getCurrentYearRange();
             const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            const treeById = new Map(orchardData.map(tree => [String(tree.tree_id ?? ''), tree]));
+            const treeByReference = new Map(orchardData.map(tree => [getTreeRecordKey(tree), tree]));
             const harvestThisYear = harvestMetricLogs.filter(log => {
                 const sourceDate = log.harvest_date || log.created_at;
                 return sourceDate && new Date(sourceDate).getFullYear() === label;
@@ -1264,7 +1335,7 @@
             ]);
 
             const harvestByField = Object.entries(harvestThisYear.reduce((acc, log) => {
-                const tree = treeById.get(String(log.tree_id ?? ''));
+                const tree = treeByReference.get(getTreeReferenceKey(log.tree_serial, log.tree_id));
                 const field = String(tree?.field_name ?? 'No Field');
                 acc[field] = (acc[field] || 0) + getHarvestNetWeight(log);
                 return acc;
@@ -1273,7 +1344,7 @@
                 .map(([labelText, value]) => ({ label: labelText, value }));
 
             const harvestByCultivar = Object.entries(harvestThisYear.reduce((acc, log) => {
-                const tree = treeById.get(String(log.tree_id ?? ''));
+                const tree = treeByReference.get(getTreeReferenceKey(log.tree_serial, log.tree_id));
                 const cultivar = String(tree?.variety ?? 'Unknown cultivar');
                 acc[cultivar] = (acc[cultivar] || 0) + getHarvestNetWeight(log);
                 return acc;
@@ -1290,7 +1361,7 @@
                 .map(([labelText, value]) => ({ label: labelText, value }));
 
             const workOrdersByCultivar = Object.entries(workOrders.reduce((acc, wo) => {
-                const tree = treeById.get(String(wo.tree_id ?? ''));
+                const tree = treeByReference.get(getTreeReferenceKey(wo.tree_serial, wo.tree_id));
                 const cultivar = String(tree?.variety ?? 'Unknown cultivar');
                 acc[cultivar] = (acc[cultivar] || 0) + 1;
                 return acc;
@@ -1338,7 +1409,7 @@
                 const cultivar = String(tree.variety ?? 'Unknown cultivar');
                 if (!acc[cultivar]) acc[cultivar] = { total: 0, pruned: 0 };
                 acc[cultivar].total += 1;
-                if (prunedThisYear.has(String(tree.tree_id ?? ''))) {
+                if (prunedThisYear.has(getTreeRecordKey(tree))) {
                     acc[cultivar].pruned += 1;
                 }
                 return acc;
@@ -1351,7 +1422,7 @@
                 }));
 
             const openWorkOrdersByField = Object.entries(openWorkOrders.reduce((acc, wo) => {
-                const tree = treeById.get(String(wo.tree_id ?? ''));
+                const tree = treeByReference.get(getTreeReferenceKey(wo.tree_serial, wo.tree_id));
                 const field = String(tree?.field_name ?? 'No Field');
                 acc[field] = (acc[field] || 0) + 1;
                 return acc;
@@ -1393,7 +1464,7 @@
             const { label } = getCurrentYearRange();
             const { data, error } = await _supabase
                 .from('harvest_logs')
-                .select('tree_id, harvest_date, created_at');
+                .select('tree_id, tree_serial, harvest_date, created_at');
 
             if (error) {
                 console.error('Error fetching harvest status:', error);
@@ -1407,7 +1478,7 @@
                         const sourceDate = log.harvest_date || log.created_at;
                         return sourceDate && new Date(sourceDate).getFullYear() === label;
                     })
-                    .map(log => log.tree_id)
+                    .map(log => getTreeReferenceKey(log.tree_serial, log.tree_id))
                     .filter(Boolean)
             );
         }
@@ -1416,7 +1487,7 @@
             const { label } = getCurrentYearRange();
             const { data, error } = await _supabase
                 .from('pruning_events')
-                .select('tree_id, pruned_at, created_at');
+                .select('tree_id, tree_serial, pruned_at, created_at');
 
             if (error) {
                 console.error('Error fetching pruning status:', error);
@@ -1430,7 +1501,7 @@
                         const sourceDate = event.pruned_at || event.created_at;
                         return sourceDate && new Date(sourceDate).getFullYear() === label;
                     })
-                    .map(event => event.tree_id)
+                    .map(event => getTreeReferenceKey(event.tree_serial, event.tree_id))
                     .filter(Boolean)
             );
         }
@@ -1439,9 +1510,10 @@
             const { label } = getCurrentYearRange();
             document.getElementById('treeGrid').innerHTML = trees.map(tree => {
                 const treeId = getTreeInternalId(tree);
+                const treeKey = getTreeRecordKey(tree);
                 const treeLabel = getTreeDisplayTag(tree);
-                const isHarvested = harvestedThisYear.has(treeId);
-                const isPruned = prunedThisYear.has(treeId);
+                const isHarvested = harvestedThisYear.has(treeKey);
+                const isPruned = prunedThisYear.has(treeKey);
                 return `
                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 clickable" onclick='viewTreeDetail(${JSON.stringify(treeId)})'>
                     <div class="flex items-start justify-between gap-3">
@@ -1658,15 +1730,10 @@
         function getMappableWorkOrders() {
             if (activeMapWorkOrderTypeFilters.size === 0) return [];
 
-            const treeById = new Map(
-                orchardData
-                    .filter(tree => tree.latitude != null && tree.longitude != null)
-                    .map(tree => [String(tree.tree_id ?? ''), tree])
-            );
-
             return workOrders
                 .map(wo => {
-                    const tree = treeById.get(String(wo.tree_id ?? ''));
+                    const tree = findTreeByReference(wo.tree_serial, wo.tree_id);
+                    if (tree?.latitude == null || tree?.longitude == null) return null;
                     if (!tree) return null;
                     return { workOrder: wo, tree };
                 })
@@ -1676,9 +1743,9 @@
                     if (activeVarietyFilters.size === 0) return false;
                     if (variety && !activeVarietyFilters.has(variety)) return false;
 
-                    const treeId = String(tree.tree_id ?? '');
-                    const isHarvested = harvestedThisYear.has(treeId);
-                    const isPruned = prunedThisYear.has(treeId);
+                    const treeKey = getTreeRecordKey(tree);
+                    const isHarvested = harvestedThisYear.has(treeKey);
+                    const isPruned = prunedThisYear.has(treeKey);
                     if (activeMapHarvestFilter === 'harvested' && !isHarvested) return false;
                     if (activeMapHarvestFilter === 'pending' && isHarvested) return false;
                     if (activeMapPruningFilter === 'pruned' && !isPruned) return false;
@@ -1760,8 +1827,9 @@
 
                 if (!matchesSearch) return false;
 
-                const isHarvested = harvestedThisYear.has(String(t.tree_id ?? ''));
-                const isPruned = prunedThisYear.has(String(t.tree_id ?? ''));
+                const treeKey = getTreeRecordKey(t);
+                const isHarvested = harvestedThisYear.has(treeKey);
+                const isPruned = prunedThisYear.has(treeKey);
                 if (activeHarvestFilter === 'harvested') return isHarvested;
                 if (activeHarvestFilter === 'pending') return !isHarvested;
                 if (activePruningFilter === 'pruned') return isPruned;
@@ -1775,7 +1843,7 @@
 
         function updateHarvestFilterSummary(visibleCount) {
             const { label } = getCurrentYearRange();
-            const harvestedCount = orchardData.filter(tree => harvestedThisYear.has(String(tree.tree_id ?? ''))).length;
+            const harvestedCount = orchardData.filter(tree => harvestedThisYear.has(getTreeRecordKey(tree))).length;
             const pendingCount = orchardData.length - harvestedCount;
             document.getElementById('harvest-filter-summary').innerText =
                 `${label}: ${harvestedCount} harvested, ${pendingCount} pending, ${visibleCount} shown`;
@@ -1800,7 +1868,7 @@
 
         function updatePruningFilterSummary(visibleCount) {
             const { label } = getCurrentYearRange();
-            const prunedCount = orchardData.filter(tree => prunedThisYear.has(String(tree.tree_id ?? ''))).length;
+            const prunedCount = orchardData.filter(tree => prunedThisYear.has(getTreeRecordKey(tree))).length;
             const pendingCount = orchardData.length - prunedCount;
             document.getElementById('pruning-filter-summary').innerText =
                 `${label}: ${prunedCount} pruned, ${pendingCount} pending, ${visibleCount} shown`;
@@ -1946,8 +2014,9 @@
         }
 
         async function refreshAdminData() {
+            await fetchTrees();
             await fetchLookupTables();
-            alert('Admin lookup data refreshed.');
+            alert('Admin data refreshed.');
         }
 
         function getFertigationTargetOptions() {
@@ -2055,9 +2124,63 @@
         }
 
         function renderAdminLookups() {
+            renderAdminTrees();
             renderAdminFields();
             renderAdminZones();
             renderAdminProducts();
+        }
+
+        function getAdminTreeFilterValue() {
+            return String(document.getElementById('adminTreeSearch')?.value ?? '').trim().toLowerCase();
+        }
+
+        function renderAdminTrees() {
+            const container = document.getElementById('admin-trees-list');
+            if (!container) return;
+
+            const term = getAdminTreeFilterValue();
+            const filteredTrees = orchardData
+                .filter(tree => {
+                    if (!term) return true;
+                    const haystack = [
+                        getTreeDisplayTag(tree),
+                        getTreeSerialDisplay(tree),
+                        tree.tree_id,
+                        tree.field_name,
+                        getTreeRowValue(tree),
+                        tree.column_number,
+                        tree.variety
+                    ].map(value => String(value ?? '').toLowerCase());
+                    return haystack.some(value => value.includes(term));
+                })
+                .sort((a, b) => {
+                    const fieldCompare = String(a.field_name ?? '').localeCompare(String(b.field_name ?? ''));
+                    if (fieldCompare !== 0) return fieldCompare;
+                    const rowCompare = getTreeRowValue(a).localeCompare(getTreeRowValue(b), undefined, { numeric: true });
+                    if (rowCompare !== 0) return rowCompare;
+                    return getTreeDisplayTag(a).localeCompare(getTreeDisplayTag(b), undefined, { numeric: true });
+                });
+
+            if (!filteredTrees.length) {
+                container.innerHTML = '<p class="text-gray-400">No trees match the current filter.</p>';
+                return;
+            }
+
+            container.innerHTML = filteredTrees.map(tree => `
+                <div class="rounded-xl border border-gray-200 px-3 py-3">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <p class="font-semibold text-gray-900">${safeText(getTreeDisplayTag(tree), 'Unknown')}</p>
+                            <p class="text-xs text-gray-500">Serial ${safeText(getTreeSerialDisplay(tree), 'Not assigned')} | Legacy ID ${safeText(tree.tree_id, 'Unknown')}</p>
+                            <p class="text-xs text-gray-500">${safeText(tree.field_name || 'No Field', 'No Field')} | Row ${safeText(getTreeRowValue(tree) || 'Unknown', 'Unknown')} | Col ${safeText(tree.column_number ?? 'Unknown', 'Unknown')}</p>
+                            <p class="text-xs text-gray-500">${safeText(tree.variety || 'Unknown cultivar', 'Unknown cultivar')}</p>
+                        </div>
+                        <div class="flex gap-2 shrink-0">
+                            <button onclick='startEditTreeTag(${JSON.stringify(getTreeInternalId(tree))})' class="bg-emerald-50 text-emerald-800 px-3 py-1 rounded-lg text-xs font-bold">Edit Tag</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
         }
 
         function renderAdminFields() {
@@ -2142,6 +2265,17 @@
             document.getElementById('adminFieldCancelBtn').classList.add('hidden');
         }
 
+        function resetAdminTreeForm() {
+            document.getElementById('adminTreeForm').reset();
+            document.getElementById('admin_tree_id').value = '';
+            document.getElementById('admin_tree_serial').value = '';
+            document.getElementById('admin_tree_legacy_id').value = '';
+            document.getElementById('admin_tree_field').value = '';
+            document.getElementById('admin_tree_row_column').value = '';
+            document.getElementById('adminTreeSubmitBtn').innerText = 'Save Tree Tag';
+            document.getElementById('adminTreeCancelBtn').classList.add('hidden');
+        }
+
         function resetAdminZoneForm() {
             document.getElementById('adminZoneForm').reset();
             document.getElementById('admin_zone_id').value = '';
@@ -2165,6 +2299,21 @@
             document.getElementById('admin_field_notes').value = field.notes || '';
             document.getElementById('adminFieldSubmitBtn').innerText = 'Save Field Changes';
             document.getElementById('adminFieldCancelBtn').classList.remove('hidden');
+            showPage('admin-page');
+            window.scrollTo(0, 0);
+        }
+
+        function startEditTreeTag(treeId) {
+            const tree = findTreeById(treeId);
+            if (!tree) return;
+            document.getElementById('admin_tree_id').value = getTreeInternalId(tree);
+            document.getElementById('admin_tree_serial').value = getTreeSerialDisplay(tree);
+            document.getElementById('admin_tree_legacy_id').value = tree.tree_id || '';
+            document.getElementById('admin_tree_tag').value = tree.tree_tag || tree.tree_id || '';
+            document.getElementById('admin_tree_field').value = tree.field_name || '';
+            document.getElementById('admin_tree_row_column').value = `Row ${getTreeRowValue(tree) || 'Unknown'} | Col ${tree.column_number ?? 'Unknown'}`;
+            document.getElementById('adminTreeSubmitBtn').innerText = 'Save Tree Tag Changes';
+            document.getElementById('adminTreeCancelBtn').classList.remove('hidden');
             showPage('admin-page');
             window.scrollTo(0, 0);
         }
@@ -2436,13 +2585,20 @@
             const tableBody = document.getElementById('yield-history-body');
             const avgDisplay = document.getElementById('avg-yield');
             const countDisplay = document.getElementById('total-count');
+            const tree = findTreeById(treeId);
+            const treeSerial = getTreeSerialValue(tree);
             
             tableBody.innerHTML = '<tr><td colspan="2" class="p-3 text-center text-xs text-gray-400">Loading history...</td></tr>';
 
-            const { data, error } = await _supabase
+            let query = _supabase
                 .from('harvest_logs')
-                .select('net_nut_weight_kg, harvest_date, created_at')
-                .eq('tree_id', treeId)
+                .select('net_nut_weight_kg, harvest_date, created_at');
+
+            query = treeSerial != null
+                ? query.eq('tree_serial', treeSerial)
+                : query.eq('tree_id', treeId);
+
+            const { data, error } = await query
                 .order('harvest_date', { ascending: false });
 
             if (error || !data || data.length === 0) {
@@ -2510,8 +2666,10 @@
             btn.innerText = 'Saving...';
 
             const activeSession = await fetchActiveSession('harvesting');
+            const treeSerial = getTreeSerialValue(treeId);
             const harvestPayload = {
                 tree_id: treeId,
+                tree_serial: treeSerial,
                 harvest_date: hDate,
                 gross_weight_kg: gross,
                 leaf_to_nut_ratio: ratio,
@@ -2621,8 +2779,10 @@
             btn.innerText = 'Saving...';
 
             const activeSession = await fetchActiveSession('pruning');
+            const treeSerial = getTreeSerialValue(treeId);
             const pruningPayload = {
                 tree_id: treeId,
+                tree_serial: treeSerial,
                 pruned_at: pruningDate,
                 notes: document.getElementById('pruning-notes').value,
                 created_at: new Date().toISOString()
@@ -2728,6 +2888,52 @@
 
             btn.disabled = false;
             btn.innerText = document.getElementById('admin_field_id').value ? 'Save Field Changes' : 'Add Field';
+        };
+
+        document.getElementById('adminTreeForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('adminTreeSubmitBtn');
+            const treeId = document.getElementById('admin_tree_id').value;
+            const treeTag = document.getElementById('admin_tree_tag').value.trim();
+
+            if (!treeId) {
+                alert('Choose a tree from the list before saving.');
+                return;
+            }
+
+            if (!treeTag) {
+                alert('Please enter a visible tree tag.');
+                return;
+            }
+
+            const duplicateTree = orchardData.find(tree =>
+                String(tree.tree_id ?? '') !== String(treeId) &&
+                String(tree.tree_tag ?? '').trim().toLowerCase() === treeTag.toLowerCase()
+            );
+
+            if (duplicateTree) {
+                alert(`That tree tag is already in use by ${getTreeDisplayTag(duplicateTree)}.`);
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = 'Saving...';
+
+            const { error } = await _supabase
+                .from('trees')
+                .update({ tree_tag: treeTag })
+                .eq('tree_id', treeId);
+
+            if (error) {
+                alert('Error: ' + error.message);
+            } else {
+                resetAdminTreeForm();
+                await fetchTrees();
+                alert('Tree tag updated.');
+            }
+
+            btn.disabled = false;
+            btn.innerText = document.getElementById('admin_tree_id').value ? 'Save Tree Tag Changes' : 'Save Tree Tag';
         };
 
         document.getElementById('adminZoneForm').onsubmit = async (e) => {
@@ -2857,6 +3063,7 @@
             e.preventDefault();
             const btn = document.getElementById('woSubmitBtn');
             const treeId = document.getElementById('work-id-internal').value;
+            const treeSerial = getTreeSerialValue(treeId);
             const fallbackPhotoUrl = getSafeExternalUrl(document.getElementById('work-photo-url').value);
             const photoFile = workPhotoFile;
             
@@ -2877,26 +3084,47 @@
                 }
             }
 
-            const { error } = await _supabase.from('work_orders').insert([{
+            const workOrderPayload = {
                 tree_id: treeId,
+                tree_serial: treeSerial,
                 task_type: document.getElementById('task-type').value,
                 instructions: document.getElementById('work-instructions').value,
                 photo_url: photoUrl || null,
                 status: 'open',
                 created_at: new Date().toISOString()
-            }]);
+            };
+
+            const { data: createdWorkOrders, error } = await _supabase
+                .from('work_orders')
+                .insert([workOrderPayload])
+                .select('wo_id');
 
             if (error) {
                 alert('Error: ' + error.message);
                 btn.disabled = false;
                 btn.innerText = 'Submit Work Order';
             } else {
+                const createdWorkOrder = (createdWorkOrders || [])[0];
+                if (createdWorkOrder?.wo_id) {
+                    const targetPayload = {
+                        wo_id: createdWorkOrder.wo_id,
+                        target_type: 'tree',
+                        tree_id: treeId,
+                        tree_serial: treeSerial,
+                        created_at: new Date().toISOString()
+                    };
+                    const { error: targetError } = await _supabase.from('work_order_targets').insert([targetPayload]);
+                    if (targetError) {
+                        console.error('Error creating work order target:', targetError);
+                    }
+                }
                 alert('Work order created!');
                 e.target.reset();
                 resetWorkPhotoState();
                 showPage('tree-list');
                 btn.disabled = false;
                 btn.innerText = 'Submit Work Order';
+                await fetchWorkOrders();
             }
         };
 
@@ -2914,9 +3142,8 @@
 
         function renderWorkOrders() {
             const tbody = document.getElementById('woTableBody');
-            const treeById = new Map(orchardData.map(tree => [String(tree.tree_id ?? ''), tree]));
             tbody.innerHTML = filteredWO.map(wo => {
-                const tree = treeById.get(String(wo.tree_id ?? ''));
+                const tree = findTreeByReference(wo.tree_serial, wo.tree_id);
                 const treeId = tree ? getTreeDisplayTag(tree) : String(wo.tree_id ?? 'Unassigned');
                 const taskType = String(wo.task_type ?? 'Unspecified');
                 const status = String(wo.status ?? 'unknown');
@@ -2941,7 +3168,8 @@
         function filterWorkOrders() {
             const term = document.getElementById('woSearch').value.toLowerCase();
             filteredWO = workOrders.filter(wo => {
-                const treeId = String(wo.tree_id ?? '').toLowerCase();
+                const tree = findTreeByReference(wo.tree_serial, wo.tree_id);
+                const treeId = String(tree ? getTreeDisplayTag(tree) : (wo.tree_id ?? '')).toLowerCase();
                 const taskType = String(wo.task_type ?? '').toLowerCase();
                 const status = String(wo.status ?? '').toLowerCase();
                 return treeId.includes(term) || taskType.includes(term) || status.includes(term);
@@ -2952,7 +3180,7 @@
         function viewWODetail(woId) {
             const wo = workOrders.find(w => String(w.wo_id) === String(woId));
             if (!wo) return;
-            const tree = findTreeById(wo.tree_id);
+            const tree = findTreeByReference(wo.tree_serial, wo.tree_id);
             const photoUrl = getSafeExternalUrl(wo.photo_url);
             const photoSection = document.getElementById('wod-photo-section');
             const photoImage = document.getElementById('wod-photo-image');
@@ -3040,9 +3268,9 @@
                     return activeVarietyFilters.has(variety);
                 })
                 .map(tree => {
-                const treeId = String(tree.tree_id ?? '');
-                const isHarvested = harvestedThisYear.has(treeId);
-                const isPruned = prunedThisYear.has(treeId);
+                const treeKey = getTreeRecordKey(tree);
+                const isHarvested = harvestedThisYear.has(treeKey);
+                const isPruned = prunedThisYear.has(treeKey);
                 const markerHtml = `
                     <div style="
                         width: 18px;
@@ -3121,9 +3349,9 @@
                     return activeVarietyFilters.has(variety);
                 })
                 .filter(tree => {
-                    const treeId = String(tree.tree_id ?? '');
-                    const isHarvested = harvestedThisYear.has(treeId);
-                    const isPruned = prunedThisYear.has(treeId);
+                    const treeKey = getTreeRecordKey(tree);
+                    const isHarvested = harvestedThisYear.has(treeKey);
+                    const isPruned = prunedThisYear.has(treeKey);
                     if (activeMapHarvestFilter === 'harvested' && !isHarvested) return false;
                     if (activeMapHarvestFilter === 'pending' && isHarvested) return false;
                     if (activeMapPruningFilter === 'pruned' && !isPruned) return false;
