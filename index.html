@@ -158,10 +158,12 @@
         </section>
 
         <section id="tree-detail" class="page bg-white p-6 rounded-2xl shadow-sm border border-gray-100 max-w-lg mx-auto">
+            <input type="hidden" id="td-tree-id-internal">
             <h2 class="text-3xl font-bold text-emerald-900" id="td-id"></h2>
             <p class="text-emerald-600 font-bold uppercase tracking-wider" id="td-field"></p>
             
             <div class="my-4 space-y-1">
+                <p class="text-gray-600">Serial: <span id="td-serial" class="font-semibold text-gray-900"></span></p>
                 <p class="text-gray-600">Variety: <span id="td-variety" class="font-semibold text-gray-900"></span></p>
                 <p class="text-gray-600">Age: <span id="td-age" class="font-semibold text-gray-900"></span></p>
                 <p class="text-gray-600">Row: <span id="td-row" class="font-semibold text-gray-900"></span></p>
@@ -193,13 +195,13 @@
             </div>
 
             <div class="space-y-3">
-                <button onclick="openHarvest(document.getElementById('td-id').innerText)" class="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-md">Log Tree Harvest</button>
-                <button onclick="openRowHarvestFromTree(document.getElementById('td-id').innerText)" class="w-full bg-emerald-100 text-emerald-900 py-4 rounded-xl font-bold shadow-sm border border-emerald-200">Log Row Harvest</button>
-                <button onclick="openPruning(document.getElementById('td-id').innerText)" class="w-full bg-sky-700 text-white py-4 rounded-xl font-bold shadow-md">Log Pruning</button>
+                <button onclick="openHarvest(document.getElementById('td-tree-id-internal').value)" class="w-full bg-emerald-600 text-white py-4 rounded-xl font-bold shadow-md">Log Tree Harvest</button>
+                <button onclick="openRowHarvestFromTree(document.getElementById('td-tree-id-internal').value)" class="w-full bg-emerald-100 text-emerald-900 py-4 rounded-xl font-bold shadow-sm border border-emerald-200">Log Row Harvest</button>
+                <button onclick="openPruning(document.getElementById('td-tree-id-internal').value)" class="w-full bg-sky-700 text-white py-4 rounded-xl font-bold shadow-md">Log Pruning</button>
                 <button onclick="openSessionForm('harvesting')" class="w-full bg-emerald-800 text-white py-3 rounded-xl font-bold shadow-md">Start Harvest Session</button>
                 <button onclick="openSessionForm('pruning')" class="w-full bg-sky-800 text-white py-3 rounded-xl font-bold shadow-md">Start Pruning Session</button>
-                <button onclick="openWorkOrder(document.getElementById('td-id').innerText)" class="w-full bg-orange-600 text-white py-4 rounded-xl font-bold shadow-md">New Work Order</button>
-                <button onclick="updateTreeLocation(document.getElementById('td-id').innerText)" class="w-full border-2 border-emerald-800 text-emerald-800 py-3 rounded-xl font-bold">Update GPS Location</button>
+                <button onclick="openWorkOrder(document.getElementById('td-tree-id-internal').value)" class="w-full bg-orange-600 text-white py-4 rounded-xl font-bold shadow-md">New Work Order</button>
+                <button onclick="updateTreeLocation(document.getElementById('td-tree-id-internal').value)" class="w-full border-2 border-emerald-800 text-emerald-800 py-3 rounded-xl font-bold">Update GPS Location</button>
                 <button onclick="showPage('tree-list')" class="w-full text-gray-400 py-2">Back to List</button>
             </div>
         </section>
@@ -867,7 +869,8 @@
         }
 
         function updatePendingLocationPanel(treeId, latitude, longitude) {
-            document.getElementById('location-confirm-tree').innerText = treeId;
+            const tree = findTreeById(treeId);
+            document.getElementById('location-confirm-tree').innerText = tree ? getTreeDisplayTag(tree) : treeId;
             document.getElementById('location-confirm-lat').innerText = Number(latitude).toFixed(7);
             document.getElementById('location-confirm-lng').innerText = Number(longitude).toFixed(7);
         }
@@ -1041,6 +1044,24 @@
         function getTreeRowValue(tree) {
             const rowValue = tree?.row_number ?? tree?.row_name ?? '';
             return String(rowValue).trim();
+        }
+
+        function getTreeDisplayTag(tree) {
+            return String(tree?.tree_tag ?? tree?.tree_id ?? '').trim() || 'Unknown';
+        }
+
+        function getTreeInternalId(treeOrId) {
+            if (typeof treeOrId === 'string') return treeOrId;
+            return String(treeOrId?.tree_id ?? '').trim();
+        }
+
+        function getTreeSerialDisplay(tree) {
+            const serial = tree?.tree_serial;
+            return serial == null || serial === '' ? 'Not assigned' : String(serial);
+        }
+
+        function findTreeById(treeId) {
+            return orchardData.find(tree => String(tree.tree_id ?? '') === String(treeId ?? '')) || null;
         }
 
         function getAvailableHarvestRows() {
@@ -1417,15 +1438,17 @@
         function renderTrees(trees) {
             const { label } = getCurrentYearRange();
             document.getElementById('treeGrid').innerHTML = trees.map(tree => {
-                const treeId = String(tree.tree_id ?? 'Unknown');
+                const treeId = getTreeInternalId(tree);
+                const treeLabel = getTreeDisplayTag(tree);
                 const isHarvested = harvestedThisYear.has(treeId);
                 const isPruned = prunedThisYear.has(treeId);
                 return `
                 <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 clickable" onclick='viewTreeDetail(${JSON.stringify(treeId)})'>
                     <div class="flex items-start justify-between gap-3">
                         <div>
-                            <h3 class="text-xl font-bold">${safeText(treeId, 'Unknown')}</h3>
+                            <h3 class="text-xl font-bold">${safeText(treeLabel, 'Unknown')}</h3>
                             <p class="text-xs text-emerald-600 font-bold uppercase mt-1">${safeText(tree.field_name, 'No Field')}</p>
+                            <p class="text-xs text-gray-400 mt-1">Serial ${safeText(getTreeSerialDisplay(tree), 'Not assigned')}</p>
                         </div>
                         <div class="flex flex-col items-end gap-2">
                             <span class="text-xs font-bold px-3 py-1 rounded-full ${isHarvested ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">
@@ -1730,6 +1753,8 @@
             const filtered = orchardData.filter(t => {
                 const matchesSearch =
                     String(t.tree_id ?? '').toLowerCase().includes(term) ||
+                    String(t.tree_tag ?? '').toLowerCase().includes(term) ||
+                    String(t.tree_serial ?? '').toLowerCase().includes(term) ||
                     String(t.field_name ?? '').toLowerCase().includes(term) ||
                     String(t.variety ?? '').toLowerCase().includes(term);
 
@@ -2386,11 +2411,13 @@
         }
 
         async function viewTreeDetail(id) {
-            const tree = orchardData.find(t => t.tree_id === id);
+            const tree = findTreeById(id);
             if (!tree) return;
             
-            document.getElementById('td-id').innerText = tree.tree_id;
+            document.getElementById('td-tree-id-internal').value = getTreeInternalId(tree);
+            document.getElementById('td-id').innerText = getTreeDisplayTag(tree);
             document.getElementById('td-field').innerText = tree.field_name || 'No Field Assigned';
+            document.getElementById('td-serial').innerText = getTreeSerialDisplay(tree);
             document.getElementById('td-variety').innerText = tree.variety || 'N/A';
             document.getElementById('td-row').innerText = getTreeRowValue(tree) || 'Unknown';
             
@@ -2450,14 +2477,16 @@
         }
 
         function openHarvest(id) {
-            document.getElementById('harvest-tree-id').innerText = id;
+            const tree = findTreeById(id);
+            document.getElementById('harvest-tree-id').innerText = tree ? getTreeDisplayTag(tree) : id;
             document.getElementById('harvest-id-internal').value = id;
             document.getElementById('harvest_date').value = getLocalDateInputValue();
             showPage('log-harvest');
         }
 
         function openPruning(id) {
-            document.getElementById('pruning-tree-id').innerText = id;
+            const tree = findTreeById(id);
+            document.getElementById('pruning-tree-id').innerText = tree ? getTreeDisplayTag(tree) : id;
             document.getElementById('pruning-id-internal').value = id;
             pruningDateInput.value = getLocalDateInputValue();
             showPage('log-pruning');
@@ -2502,7 +2531,8 @@
                 btn.disabled = false;
                 btn.innerText = 'Save Harvest';
             } else {
-                alert(`Harvest logged for ${treeId}! Net weight estimate: ${netWeight.toFixed(2)} kg.`);
+                const tree = findTreeById(treeId);
+                alert(`Harvest logged for ${tree ? getTreeDisplayTag(tree) : treeId}! Net weight estimate: ${netWeight.toFixed(2)} kg.`);
                 e.target.reset();
                 netDisplay.innerText = '0.00';
                 showPage('tree-list');
@@ -2610,7 +2640,8 @@
                 btn.disabled = false;
                 btn.innerText = 'Save Pruning Event';
             } else {
-                alert(`Pruning logged for ${treeId}!`);
+                const tree = findTreeById(treeId);
+                alert(`Pruning logged for ${tree ? getTreeDisplayTag(tree) : treeId}!`);
                 e.target.reset();
                 btn.disabled = false;
                 btn.innerText = 'Save Pruning Event';
@@ -2883,8 +2914,10 @@
 
         function renderWorkOrders() {
             const tbody = document.getElementById('woTableBody');
+            const treeById = new Map(orchardData.map(tree => [String(tree.tree_id ?? ''), tree]));
             tbody.innerHTML = filteredWO.map(wo => {
-                const treeId = String(wo.tree_id ?? 'Unassigned');
+                const tree = treeById.get(String(wo.tree_id ?? ''));
+                const treeId = tree ? getTreeDisplayTag(tree) : String(wo.tree_id ?? 'Unassigned');
                 const taskType = String(wo.task_type ?? 'Unspecified');
                 const status = String(wo.status ?? 'unknown');
                 const createdAt = formatDisplayDate(wo.created_at);
@@ -2919,12 +2952,13 @@
         function viewWODetail(woId) {
             const wo = workOrders.find(w => String(w.wo_id) === String(woId));
             if (!wo) return;
+            const tree = findTreeById(wo.tree_id);
             const photoUrl = getSafeExternalUrl(wo.photo_url);
             const photoSection = document.getElementById('wod-photo-section');
             const photoImage = document.getElementById('wod-photo-image');
             const photoLink = document.getElementById('wod-photo-link');
             document.getElementById('wod-id-internal').value = wo.wo_id;
-            document.getElementById('wod-tree').innerText = wo.tree_id || 'Unassigned';
+            document.getElementById('wod-tree').innerText = tree ? getTreeDisplayTag(tree) : (wo.tree_id || 'Unassigned');
             document.getElementById('wod-type').innerText = wo.task_type || 'Unspecified';
             document.getElementById('wod-status').innerText = wo.status || 'unknown';
             document.getElementById('wod-instructions').innerText = wo.instructions || 'No instructions provided.';
@@ -3027,6 +3061,7 @@
                 });
                 const m = L.marker([tree.latitude, tree.longitude], { icon }).addTo(map);
                 m.on('click', () => viewTreeDetail(tree.tree_id));
+                m.bindTooltip(safeText(getTreeDisplayTag(tree), 'Unknown'), { direction: 'top', offset: [0, -12] });
                 return m;
             });
 
@@ -3064,7 +3099,7 @@
                     const popupHtml = `
                         <div class="text-sm">
                             <p><strong>${safeText(workOrder.task_type, 'Unspecified')}</strong></p>
-                            <p>Tree: ${safeText(workOrder.tree_id, 'Unassigned')}</p>
+                            <p>Tree: ${safeText(getTreeDisplayTag(tree), 'Unassigned')}</p>
                             <p>Cultivar: ${safeText(tree.variety, 'Unknown')}</p>
                             <p>Status: ${safeText(formatWorkOrderStatus(workOrder.status), 'Unknown')}</p>
                             <button onclick='viewWODetail(${JSON.stringify(String(workOrder.wo_id ?? ''))})' style="margin-top:8px;background:#c2410c;color:white;border:none;border-radius:8px;padding:6px 10px;font-weight:700;cursor:pointer;">Open Work Order</button>
@@ -3116,6 +3151,8 @@
 
         function showPendingLocationPreview(treeId, latitude, longitude) {
             if (!map) initMap();
+            const tree = findTreeById(treeId);
+            const treeLabel = tree ? getTreeDisplayTag(tree) : treeId;
 
             pendingLocation = { treeId, latitude, longitude };
 
@@ -3124,7 +3161,7 @@
             }
 
             pendingLocationMarker = L.marker([latitude, longitude], { draggable: true }).addTo(map);
-            pendingLocationMarker.bindPopup(`Proposed location for ${escapeHtml(treeId)}`).openPopup();
+            pendingLocationMarker.bindPopup(`Proposed location for ${escapeHtml(treeLabel)}`).openPopup();
             pendingLocationMarker.on('dragend', () => {
                 const position = pendingLocationMarker.getLatLng();
                 pendingLocation.latitude = position.lat;
@@ -3213,7 +3250,8 @@
         function openWorkOrder(id) {
             document.getElementById('workForm').reset();
             resetWorkPhotoState();
-            document.getElementById('work-tree-id').innerText = id;
+            const tree = findTreeById(id);
+            document.getElementById('work-tree-id').innerText = tree ? getTreeDisplayTag(tree) : id;
             document.getElementById('work-id-internal').value = id;
             showPage('work-order');
         }
